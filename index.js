@@ -36,11 +36,9 @@ async function sendLongMessage(roomId, text) {
   }
 }
 
-async function listFilesInFolder() {
-  return '📄 ใช้ไฟล์เดียว ไม่มีรายการไฟล์ให้แสดง';
-}
-
 async function downloadFile(fileId) {
+  if (!fileId) throw new Error('❌ Missing required parameter: fileId');
+
   const tmpFile = tmp.fileSync({ postfix: '.xlsx' });
   const dest = fs.createWriteStream(tmpFile.name);
 
@@ -64,7 +62,7 @@ async function downloadFile(fileId) {
   return tmpFile.name;
 }
 
-async function searchAndReadFileByName(filename, keyword, sheetName) {
+async function searchAndReadFileByName(_, keyword, sheetName) {
   const filePath = await downloadFile(GOOGLE_SHEET_FILE_ID);
   const workbook = XLSX.readFile(filePath);
 
@@ -116,67 +114,3 @@ async function searchAndReadFileByName(filename, keyword, sheetName) {
 
   return allResults.join('\n\n');
 }
-
-app.post('/webhook', async (req, res) => {
-  res.sendStatus(200);
-  const messageId = req.body.data.id;
-  try {
-    const msgRes = await axios.get(`https://webexapis.com/v1/messages/${messageId}`, {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
-    const textRaw = msgRes.data.text;
-    const roomId = msgRes.data.roomId;
-    const personId = msgRes.data.personId;
-    const botInfo = await axios.get('https://webexapis.com/v1/people/me', {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
-    if (personId === botInfo.data.id) return;
-    const botDisplayName = botInfo.data.displayName.toLowerCase().replace(/\s+/g, '');
-    const mentionPattern = new RegExp(`@?${botDisplayName}`, 'gi');
-    const cleanedMessage = textRaw.toLowerCase().replace(mentionPattern, '').trim();
-    console.log(`📨 รับข้อความ: "${textRaw}"`);
-    console.log(`🧠 ตัดแล้วเหลือ: "${cleanedMessage}"`);
-
-    if (cleanedMessage === 'รายการไฟล์') {
-      const fileListMessage = await listFilesInFolder();
-      await sendLongMessage(roomId, fileListMessage);
-    } else if (cleanedMessage === 'ช่วยเหลือ') {
-      const helpText = `🆘 คำสั่งที่ใช้ได้:\n\n` +
-        `📌คำสั่ง ค้นหา\n -@ชื่อbot ค้นหา (คำที่ต้องการจะค้น)\n -@ชื่อbot ค้นหา - (เดือนที่ต้องการจะค้น)\n` +
-        `\n📌คำสั่ง ช่วยเหลือ \n -เป็นคำสั่งที่ไว้ดูวิธีการใช้คำสั่งต่างๆ`;
-      await sendLongMessage(roomId, helpText);
-    } else if (cleanedMessage.startsWith('ค้นหา ')) {
-      const parts = cleanedMessage.split(' ').slice(1);
-      const dashIndex = parts.indexOf('-');
-      let keyword = '';
-      let sheetName = '';
-
-      if (dashIndex !== -1) {
-        keyword = '';
-        sheetName = parts.slice(dashIndex + 1).join(' ').trim();
-      } else {
-        keyword = parts[0] || '';
-        sheetName = parts.slice(1).join(' ').trim();
-      }
-
-      if (!keyword && !sheetName) {
-        await sendLongMessage(roomId, '⚠️ ต้องระบุคำค้นหาหรือชื่อแผ่นงาน');
-      } else {
-        const result = await searchAndReadFileByName(null, keyword, sheetName);
-        await sendLongMessage(roomId, result);
-      }
-    } else {
-      await sendLongMessage(roomId, '❓ ไม่เข้าใจคำสั่ง\nพิมพ์ `ช่วยเหลือ` เพื่อดูคำสั่งที่ใช้ได้');
-    }
-  } catch (err) {
-    console.error('❌ ERROR:', err.response?.data || err.message);
-  }
-});
-
-app.get('/', (req, res) => {
-  res.send('✅ Webex Bot is running');
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Bot is running at http://localhost:${PORT}`);
-});
