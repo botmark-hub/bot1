@@ -142,7 +142,7 @@ app.post('/webhook', async (req, res) => {
       await sendLongMessage(roomId, fileListMessage);
     } else if (cleanedMessage === 'ช่วยเหลือ') {
       const helpText = `🆘 คำสั่งที่ใช้ได้:\n\n` +
-        `📌คำสั่ง ค้นหา\n -@ชื่อbot ค้นหา (คำที่ต้องการจะค้น)\n -@ชื่อbot ค้นหา - เดือนที่ต้องการจะค้น\n` +
+        `📌คำสั่ง ค้นหา\n -@ชื่อbot ค้นหา (คำที่ต้องการจะค้น)\n -@ชื่อbot ค้นหา - (เดือนที่ต้องการจะค้น)\n` +
         `\n📌คำสั่ง ช่วยเหลือ \n -เป็นคำสั่งที่ไว้ดูวิธีการใช้คำสั่งต่างๆ`;
       await sendLongMessage(roomId, helpText);
     } else if (cleanedMessage.startsWith('ค้นหา ')) {
