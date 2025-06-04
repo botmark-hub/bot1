@@ -1,4 +1,4 @@
-// ✅ โหลด .env เฉพาะเวลา dev
+// โหลด .env เฉพาะเวลา dev
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -16,9 +16,9 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
-const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
+const GOOGLE_FOLDER_ID = process.env.GOOGLE_FOLDER_ID;
 
-// ✅ Auth Google
+// ✅ ใช้ GOOGLE_CREDENTIALS จาก Environment Variable
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
@@ -37,8 +37,17 @@ async function sendLongMessage(roomId, text) {
   }
 }
 
+async function listFilesInFolder() {
+  const res = await drive.files.list({
+    q: `'${GOOGLE_FOLDER_ID}' in parents and trashed = false`,
+    fields: 'files(name, webViewLink)'
+  });
+  const files = res.data.files;
+  if (!files.length) return '📂 ไม่มีไฟล์ในโฟลเดอร์';
+  return '📋 รายชื่อไฟล์:\n' + files.map(f => `📄 ${f.name}:\n🔗 ${f.webViewLink}`).join('\n\n');
+}
+
 async function downloadFile(fileId) {
-  if (!fileId) throw new Error('❌ Missing required parameter: fileId');
   const tmpFile = tmp.fileSync({ postfix: '.xlsx' });
   const dest = fs.createWriteStream(tmpFile.name);
 
@@ -62,9 +71,17 @@ async function downloadFile(fileId) {
   return tmpFile.name;
 }
 
-async function searchSheet(keyword, sheetName) {
-  const filePath = await downloadFile(GOOGLE_SHEET_FILE_ID);
+async function searchAndReadFileByName(filename, keyword, sheetName) {
+  const res = await drive.files.list({
+    q: `'${GOOGLE_FOLDER_ID}' in parents and name contains '${filename}' and trashed = false`,
+    fields: 'files(id, name)'
+  });
+  const files = res.data.files;
+  if (!files.length) return `❌ ไม่พบไฟล์ "${filename}"`;
+  const file = files[0];
+  const filePath = await downloadFile(file.id);
   const workbook = XLSX.readFile(filePath);
+
   const sheetNamesToSearch = sheetName ? [sheetName] : workbook.SheetNames;
   let allResults = [];
 
@@ -103,12 +120,12 @@ async function searchSheet(keyword, sheetName) {
       `${i + 1} | ` + usedHeaders.map(h => (row[h] || '').toString().replace(/\|/g, '｜').replace(/\n/g, ' ')).join(' | ')
     );
 
-    const result = `📑 แผ่นงาน: ${name}\n\n${tableHeader}\n${'-'.repeat(tableHeader.length)}\n${tableRows.join('\n—\n')}`;
+    const result = `📄 ไฟล์: ${file.name}\n📑 แผ่นงาน: ${name}\n\n${tableHeader}\n${'-'.repeat(tableHeader.length)}\n${tableRows.join('\n—\n')}`;
     allResults.push(result);
   }
 
   if (!allResults.length) {
-    return `❌ ไม่พบข้อมูล${keyword ? `ที่มีคำว่า "${keyword}" ` : ''}ในไฟล์`;
+    return `❌ ไม่พบข้อมูล${keyword ? `ที่มีคำว่า "${keyword}" ` : ''}ในไฟล์ "${file.name}"`;
   }
 
   return allResults.join('\n\n');
@@ -117,66 +134,66 @@ async function searchSheet(keyword, sheetName) {
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   const messageId = req.body.data.id;
-
   try {
-    const botInfo = await axios.get('https://webexapis.com/v1/people/me', {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
-
-    const personId = req.body.data.personId;
-    if (personId === botInfo.data.id) return;
-
     const msgRes = await axios.get(`https://webexapis.com/v1/messages/${messageId}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
-
     const textRaw = msgRes.data.text;
     const roomId = msgRes.data.roomId;
-
+    const personId = msgRes.data.personId;
+    const botInfo = await axios.get('https://webexapis.com/v1/people/me', {
+      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+    });
+    if (personId === botInfo.data.id) return;
     const botDisplayName = botInfo.data.displayName.toLowerCase().replace(/\s+/g, '');
     const mentionPattern = new RegExp(`@?${botDisplayName}`, 'gi');
     const cleanedMessage = textRaw.toLowerCase().replace(mentionPattern, '').trim();
+    console.log(`📨 รับข้อความ: "${textRaw}"`);
+    console.log(`🧠 ตัดแล้วเหลือ: "${cleanedMessage}"`);
 
-    if (cleanedMessage === 'ช่วยเหลือ') {
-      const helpText = '📖 คำสั่งที่ใช้ได้:\n\n' +
-        '📌 ค้นหา <คำค้นหา> [ชื่อแผ่นงาน]\n' +
-        '- เช่น ค้นหา สมชาย กรกฎาคม2568\n' +
-        '- หรือ ค้นหา - ธันวาคม2568\n' +
-        '- จะค้นหาคำที่ระบุในทุกคอลัมน์ของทุกแถวในแผ่นงาน (หรือทุกแผ่นถ้าไม่ระบุ)';
+    if (cleanedMessage === 'รายการไฟล์') {
+      const fileListMessage = await listFilesInFolder();
+      await sendLongMessage(roomId, fileListMessage);
+    } else if (cleanedMessage === 'ช่วยเหลือ') {
+      const helpText = `🆘 คำสั่งที่ใช้ได้:\n\n` +
+        `📌 รายการไฟล์\n- แสดงรายชื่อไฟล์ทั้งหมดใน Google Drive\n\n` +
+        `📌 ค้นหา <ชื่อไฟล์> <คำค้นหา> [ชื่อแผ่นงาน]\n- เช่น ค้นหา รายงาน.xlsx สมชาย กรกฎาคม2568\n- หรือ ค้นหา รายงาน.xlsx - ธันวาคม2568\n- จะค้นหาคำที่ระบุในทุกคอลัมน์ของทุกแถวในแผ่นงาน (หรือทุกแผ่นถ้าไม่ระบุ)\n\n` +
+        `📌 ช่วยเหลือ\n- แสดงคำสั่งทั้งหมดนี้อีกครั้ง`;
       await sendLongMessage(roomId, helpText);
     } else if (cleanedMessage.startsWith('ค้นหา ')) {
       const parts = cleanedMessage.split(' ').slice(1);
       const dashIndex = parts.indexOf('-');
+      const filename = parts[0];
       let keyword = '';
       let sheetName = '';
 
       if (dashIndex !== -1) {
+        keyword = '';
         sheetName = parts.slice(dashIndex + 1).join(' ').trim();
       } else {
-        keyword = parts[0] || '';
-        sheetName = parts.slice(1).join(' ').trim();
+        keyword = parts[1] || '';
+        sheetName = parts.slice(2).join(' ').trim();
       }
 
-      if (!keyword && !sheetName) {
-        await sendLongMessage(roomId, '⚠️ ต้องระบุคำค้นหาหรือชื่อแผ่นงาน');
+      if (!filename) {
+        await sendLongMessage(roomId, '⚠️ ต้องระบุชื่อไฟล์อย่างน้อย');
       } else {
-        const result = await searchSheet(keyword, sheetName);
+        const result = await searchAndReadFileByName(filename, keyword, sheetName);
         await sendLongMessage(roomId, result);
       }
     } else {
-      await sendLongMessage(roomId, '❓ ไม่เข้าใจคำสั่ง\nพิมพ์ "ช่วยเหลือ" เพื่อดูคำสั่งที่ใช้ได้');
+      await sendLongMessage(roomId, '❓ ไม่เข้าใจคำสั่ง\nพิมพ์ `ช่วยเหลือ` เพื่อดูคำสั่งที่ใช้ได้');
     }
-
   } catch (err) {
     console.error('❌ ERROR:', err.response?.data || err.message);
   }
 });
 
+// ✅ route เช็กว่าบอทยังรันอยู่
 app.get('/', (req, res) => {
   res.send('✅ Webex Bot is running');
 });
 
-// ✅ ใช้ PORT จาก environment (สำหรับ Render)
 app.listen(PORT, () => {
-  console.log(`🚀 Bot is running on port ${PORT}`);
+  console.log(`🚀 Bot is running at http://localhost:${PORT}`);
 });
