@@ -142,9 +142,8 @@ app.post('/webhook', async (req, res) => {
       await sendLongMessage(roomId, fileListMessage);
     } else if (cleanedMessage === 'ช่วยเหลือ') {
       const helpText = `🆘 คำสั่งที่ใช้ได้:\n\n` +
-        `📌 ค้นหา <คำค้นหา> [ชื่อแผ่นงาน]\n- เช่น ค้นหา สมชาย กรกฎาคม2568\n- หรือ ค้นหา - ธันวาคม2568\n` +
-        `- จะค้นหาคำที่ระบุในทุกคอลัมน์ของทุกแถวในแผ่นงาน (หรือทุกแผ่นถ้าไม่ระบุ)\n\n` +
-        `📌 ช่วยเหลือ\n- แสดงคำสั่งทั้งหมดนี้อีกครั้ง`;
+        `📌คำสั่ง ค้นหา\nค้นหา (คำที่ต้องการจะค้น)\nค้นหา - เดือนที่ต้องการจะค้น\n` +
+        `📌คำสั่งช่วยเหลือ \n เป็นคำสั่งที่ไว้ดูวิธีการใช้คำสั่งต่างๆ`;
       await sendLongMessage(roomId, helpText);
     } else if (cleanedMessage.startsWith('ค้นหา ')) {
       const parts = cleanedMessage.split(' ').slice(1);
