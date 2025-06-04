@@ -16,9 +16,8 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
-const GOOGLE_FOLDER_ID = process.env.GOOGLE_FOLDER_ID;
+const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 
-// ✅ ใช้ GOOGLE_CREDENTIALS จาก Environment Variable
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
@@ -38,13 +37,7 @@ async function sendLongMessage(roomId, text) {
 }
 
 async function listFilesInFolder() {
-  const res = await drive.files.list({
-    q: `'${GOOGLE_FOLDER_ID}' in parents and trashed = false`,
-    fields: 'files(name, webViewLink)'
-  });
-  const files = res.data.files;
-  if (!files.length) return '📂 ไม่มีไฟล์ในโฟลเดอร์';
-  return '📋 รายชื่อไฟล์:\n' + files.map(f => `📄 ${f.name}:\n🔗 ${f.webViewLink}`).join('\n\n');
+  return '📄 ใช้ไฟล์เดียว ไม่มีรายการไฟล์ให้แสดง';
 }
 
 async function downloadFile(fileId) {
@@ -72,14 +65,7 @@ async function downloadFile(fileId) {
 }
 
 async function searchAndReadFileByName(filename, keyword, sheetName) {
-  const res = await drive.files.list({
-    q: `'${GOOGLE_FOLDER_ID}' in parents and name contains '${filename}' and trashed = false`,
-    fields: 'files(id, name)'
-  });
-  const files = res.data.files;
-  if (!files.length) return `❌ ไม่พบไฟล์ "${filename}"`;
-  const file = files[0];
-  const filePath = await downloadFile(file.id);
+  const filePath = await downloadFile(GOOGLE_SHEET_FILE_ID);
   const workbook = XLSX.readFile(filePath);
 
   const sheetNamesToSearch = sheetName ? [sheetName] : workbook.SheetNames;
@@ -120,12 +106,12 @@ async function searchAndReadFileByName(filename, keyword, sheetName) {
       `${i + 1} | ` + usedHeaders.map(h => (row[h] || '').toString().replace(/\|/g, '｜').replace(/\n/g, ' ')).join(' | ')
     );
 
-    const result = `📄 ไฟล์: ${file.name}\n📑 แผ่นงาน: ${name}\n\n${tableHeader}\n${'-'.repeat(tableHeader.length)}\n${tableRows.join('\n—\n')}`;
+    const result = `📑 แผ่นงาน: ${name}\n\n${tableHeader}\n${'-'.repeat(tableHeader.length)}\n${tableRows.join('\n—\n')}`;
     allResults.push(result);
   }
 
   if (!allResults.length) {
-    return `❌ ไม่พบข้อมูล${keyword ? `ที่มีคำว่า "${keyword}" ` : ''}ในไฟล์ "${file.name}"`;
+    return `❌ ไม่พบข้อมูล${keyword ? `ที่มีคำว่า "${keyword}" ` : ''}ในไฟล์`;
   }
 
   return allResults.join('\n\n');
@@ -156,14 +142,13 @@ app.post('/webhook', async (req, res) => {
       await sendLongMessage(roomId, fileListMessage);
     } else if (cleanedMessage === 'ช่วยเหลือ') {
       const helpText = `🆘 คำสั่งที่ใช้ได้:\n\n` +
-        `📌 รายการไฟล์\n- แสดงรายชื่อไฟล์ทั้งหมดใน Google Drive\n\n` +
-        `📌 ค้นหา <ชื่อไฟล์> <คำค้นหา> [ชื่อแผ่นงาน]\n- เช่น ค้นหา รายงาน.xlsx สมชาย กรกฎาคม2568\n- หรือ ค้นหา รายงาน.xlsx - ธันวาคม2568\n- จะค้นหาคำที่ระบุในทุกคอลัมน์ของทุกแถวในแผ่นงาน (หรือทุกแผ่นถ้าไม่ระบุ)\n\n` +
+        `📌 ค้นหา <คำค้นหา> [ชื่อแผ่นงาน]\n- เช่น ค้นหา สมชาย กรกฎาคม2568\n- หรือ ค้นหา - ธันวาคม2568\n` +
+        `- จะค้นหาคำที่ระบุในทุกคอลัมน์ของทุกแถวในแผ่นงาน (หรือทุกแผ่นถ้าไม่ระบุ)\n\n` +
         `📌 ช่วยเหลือ\n- แสดงคำสั่งทั้งหมดนี้อีกครั้ง`;
       await sendLongMessage(roomId, helpText);
     } else if (cleanedMessage.startsWith('ค้นหา ')) {
       const parts = cleanedMessage.split(' ').slice(1);
       const dashIndex = parts.indexOf('-');
-      const filename = parts[0];
       let keyword = '';
       let sheetName = '';
 
@@ -171,14 +156,14 @@ app.post('/webhook', async (req, res) => {
         keyword = '';
         sheetName = parts.slice(dashIndex + 1).join(' ').trim();
       } else {
-        keyword = parts[1] || '';
-        sheetName = parts.slice(2).join(' ').trim();
+        keyword = parts[0] || '';
+        sheetName = parts.slice(1).join(' ').trim();
       }
 
-      if (!filename) {
-        await sendLongMessage(roomId, '⚠️ ต้องระบุชื่อไฟล์อย่างน้อย');
+      if (!keyword && !sheetName) {
+        await sendLongMessage(roomId, '⚠️ ต้องระบุคำค้นหาหรือชื่อแผ่นงาน');
       } else {
-        const result = await searchAndReadFileByName(filename, keyword, sheetName);
+        const result = await searchAndReadFileByName(null, keyword, sheetName);
         await sendLongMessage(roomId, result);
       }
     } else {
@@ -189,7 +174,6 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ✅ route เช็กว่าบอทยังรันอยู่
 app.get('/', (req, res) => {
   res.send('✅ Webex Bot is running');
 });
