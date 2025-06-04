@@ -1,4 +1,8 @@
-require('dotenv').config();
+// โหลด .env เฉพาะเวลา dev
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -10,7 +14,7 @@ const tmp = require('tmp');
 const app = express();
 app.use(bodyParser.json());
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_FOLDER_ID = process.env.GOOGLE_FOLDER_ID;
 
@@ -112,7 +116,9 @@ async function searchAndReadFileByName(filename, keyword, sheetName) {
 
     const usedHeaders = headers.filter(h => filtered.some(row => row[h] !== ''));
     const tableHeader = usedHeaders.join(' | ');
-    const tableRows = filtered.map((row, i) => `${i + 1} | ` + usedHeaders.map(h => (row[h] || '').toString().replace(/\|/g, '｜').replace(/\n/g, ' ')).join(' | '));
+    const tableRows = filtered.map((row, i) =>
+      `${i + 1} | ` + usedHeaders.map(h => (row[h] || '').toString().replace(/\|/g, '｜').replace(/\n/g, ' ')).join(' | ')
+    );
 
     const result = `📄 ไฟล์: ${file.name}\n📑 แผ่นงาน: ${name}\n\n${tableHeader}\n${'-'.repeat(tableHeader.length)}\n${tableRows.join('\n—\n')}`;
     allResults.push(result);
@@ -183,7 +189,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ✅ route เช็กว่าเซิร์ฟเวอร์ทำงาน
+// ✅ route เช็กว่าบอทยังรันอยู่
 app.get('/', (req, res) => {
   res.send('✅ Webex Bot is running');
 });
