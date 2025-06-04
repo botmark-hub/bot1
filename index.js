@@ -14,8 +14,9 @@ const PORT = 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_FOLDER_ID = process.env.GOOGLE_FOLDER_ID;
 
+// ✅ ใช้ GOOGLE_CREDENTIALS จาก Environment Variable
 const auth = new google.auth.GoogleAuth({
-  keyFile: 'credentials.json',
+  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
@@ -182,7 +183,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ✅ เพิ่ม route สำหรับทดสอบว่าบอทยังทำงานอยู่
+// ✅ route เช็กว่าเซิร์ฟเวอร์ทำงาน
 app.get('/', (req, res) => {
   res.send('✅ Webex Bot is running');
 });
