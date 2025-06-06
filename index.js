@@ -18,9 +18,12 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ ใช้ credentials จาก ENV (ไม่ใช้ไฟล์)
+// ✅ แปลง \\n → \n ใน private_key เพื่อให้ใช้กับ Render ได้
+const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
+
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  credentials: rawCreds,
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
