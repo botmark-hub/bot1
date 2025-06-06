@@ -19,7 +19,7 @@ const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  keyFile: 'credentials.json',
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
@@ -38,9 +38,14 @@ async function sendLongMessage({ roomId, toPersonId, text }) {
   const chunks = text.match(/([\s\S]{1,7000})(?:\n|$)/g);
   for (const chunk of chunks) {
     try {
-      const payload = roomId ? { roomId, text: chunk } : { toPersonId, text: chunk };
+      const payload = roomId
+        ? { roomId, text: chunk }
+        : { toPersonId, text: chunk };
+
       await axios.post('https://webexapis.com/v1/messages', payload, {
-        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+        headers: {
+          Authorization: `Bearer ${WEBEX_BOT_TOKEN}`
+        }
       });
     } catch (err) {
       console.error('❌ ERROR ส่งข้อความ:', err.response?.data || err.message);
@@ -66,8 +71,11 @@ function generateDateVariants(dateStr) {
   m = m.padStart(2, '0');
 
   const variants = [`${d}/${m}/${y}`];
-  if (year > 2100) variants.push(`${d}/${m}/${year - 543}`);
-  else if (year < 2100 && year < 2500) variants.push(`${d}/${m}/${year + 543}`);
+  if (year > 2100) {
+    variants.push(`${d}/${m}/${year - 543}`);
+  } else if (year < 2100 && year < 2500) {
+    variants.push(`${d}/${m}/${year + 543}`);
+  }
   return variants;
 }
 
@@ -117,12 +125,14 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
           if (val instanceof Date) return variants.includes(formatDateTH(val));
           if (typeof val === 'string') {
             const [d, m, y] = val.split('/');
-            const parsed = new Date(`${y}-${m}-${d}`);
-            if (!isNaN(parsed)) return variants.includes(formatDateTH(parsed));
+            if (d && m && y) {
+              const parsed = new Date(`${y}-${m}-${d}`);
+              if (!isNaN(parsed)) return variants.includes(formatDateTH(parsed));
+            }
           }
           if (typeof val === 'number') {
             const excelDate = new Date(Math.round((val - 25569) * 86400 * 1000));
-            return variants.includes(formatDateTH(excelDate));
+            if (!isNaN(excelDate)) return variants.includes(formatDateTH(excelDate));
           }
           return false;
         }
@@ -136,12 +146,20 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
       const resultText = [`📄 แผ่นงาน: ${name}\n`];
       for (const row of filtered) {
         const out = {
-          งาน: '', WBS: '', อนุมัติลว: '', ชำระ: '', รับแฟ้ม: '',
-          ระยะทาง: { HT: '', LT: '' }, เสา: [], ผู้ควบคุม: '', หมายเหตุ: ''
+          งาน: '',
+          WBS: '',
+          อนุมัติ: '',
+          ชำระ: '',
+          รับแฟ้ม: '',
+          ระยะทาง: { HT: '', LT: '' },
+          เสา: [],
+          ผู้ควบคุม: '',
+          หมายเหตุ: ''
         };
 
         for (const [key, val] of Object.entries(row)) {
           let displayVal = val;
+
           if (val instanceof Date) displayVal = formatDateTH(val);
           else if (typeof val === 'number' && key.includes('ชำระ')) {
             displayVal = `฿${val.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -152,7 +170,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
           if (key.includes('ชื่องาน')) out.งาน = displayVal;
           else if (key.includes('WBS')) out.WBS = displayVal;
-          else if (key.includes('อนุมัติ/.ลว')) out.อนุมัติลว = displayVal;
+          else if (key.includes('อนุมัติ')) out.อนุมัติ = displayVal;
           else if (key.includes('ชำระ')) out.ชำระ = displayVal;
           else if (key.includes('รับแฟ้ม')) out.รับแฟ้ม = displayVal;
           else if (key.includes('HT')) out.ระยะทาง.HT = displayVal;
@@ -167,7 +185,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
         resultText.push(
           `🔹 ชื่องาน: ${out.งาน}\n` +
           `🧾 WBS: ${out.WBS}\n` +
-          `📅 อนุมัติ/.ลว: ${out.อนุมัติลว} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
+          `📅 อนุมัติ: ${out.อนุมัติ} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
           `📏 ระยะ HT: ${out.ระยะทาง.HT} | LT: ${out.ระยะทาง.LT}` +
           (out.เสา.length ? ` | เสา: ${out.เสา.join(' ')}` : '') +
           (out.ผู้ควบคุม ? `\n👤 พชง.ควบคุม: ${out.ผู้ควบคุม}` : '') +
@@ -195,6 +213,12 @@ app.post('/webhook', async (req, res) => {
     const msgRes = await axios.get(`https://webexapis.com/v1/messages/${message.id}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
+
+    const mentionedPeople = msgRes.data.mentionedPeople || [];
+    if (!mentionedPeople.includes(BOT_PERSON_ID)) {
+      console.log('📭 ข้ามข้อความที่ไม่ mention bot');
+      return res.sendStatus(200);
+    }
 
     const text = msgRes.data.text.trim();
     const cleanedText = text.replace(WEBEX_BOT_NAME, '').trim();
@@ -229,10 +253,6 @@ app.post('/webhook', async (req, res) => {
     console.error('❌ ERROR:', err.message);
     res.sendStatus(500);
   }
-});
-
-app.get('/', (req, res) => {
-  res.send('✅ Webex Bot Server is running!');
 });
 
 app.listen(PORT, async () => {
