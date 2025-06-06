@@ -18,8 +18,12 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
+// ✅ แก้ตรงนี้: ใช้ GOOGLE_CREDENTIALS จาก .env แล้วแก้ \\n เป็น \n
+const rawCredentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+rawCredentials.private_key = rawCredentials.private_key.replace(/\\n/g, '\n');
+
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  credentials: rawCredentials,
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
@@ -38,10 +42,7 @@ async function sendLongMessage({ roomId, toPersonId, text }) {
   const chunks = text.match(/([\s\S]{1,7000})(?:\n|$)/g);
   for (const chunk of chunks) {
     try {
-      const payload = roomId
-        ? { roomId, text: chunk }
-        : { toPersonId, text: chunk };
-
+      const payload = roomId ? { roomId, text: chunk } : { toPersonId, text: chunk };
       await axios.post('https://webexapis.com/v1/messages', payload, {
         headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
       });
@@ -69,11 +70,8 @@ function generateDateVariants(dateStr) {
   m = m.padStart(2, '0');
 
   const variants = [`${d}/${m}/${y}`];
-  if (year > 2100) {
-    variants.push(`${d}/${m}/${year - 543}`);
-  } else if (year < 2100 && year < 2500) {
-    variants.push(`${d}/${m}/${year + 543}`);
-  }
+  if (year > 2100) variants.push(`${d}/${m}/${year - 543}`);
+  else if (year < 2100 && year < 2500) variants.push(`${d}/${m}/${year + 543}`);
   return variants;
 }
 
