@@ -1,4 +1,3 @@
-// โหลด .env เฉพาะเวลา dev
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -16,184 +15,253 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
-const GOOGLE_FOLDER_ID = process.env.GOOGLE_FOLDER_ID;
+const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
+const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ ใช้ GOOGLE_CREDENTIALS จาก Environment Variable
+// ✅ เปลี่ยนจาก keyFile เป็น credentials จาก ENV
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
 
-async function sendLongMessage(roomId, text) {
+let BOT_PERSON_ID = '';
+
+async function getBotPersonId() {
+  const res = await axios.get('https://webexapis.com/v1/people/me', {
+    headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+  });
+  BOT_PERSON_ID = res.data.id;
+  console.log('🤖 BOT_PERSON_ID:', BOT_PERSON_ID);
+}
+
+async function sendLongMessage({ roomId, toPersonId, text }) {
   const chunks = text.match(/([\s\S]{1,7000})(?:\n|$)/g);
   for (const chunk of chunks) {
-    await axios.post('https://webexapis.com/v1/messages', {
-      roomId,
-      text: chunk
-    }, {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
+    try {
+      const payload = roomId
+        ? { roomId, text: chunk }
+        : { toPersonId, text: chunk };
+
+      await axios.post('https://webexapis.com/v1/messages', payload, {
+        headers: {
+          Authorization: `Bearer ${WEBEX_BOT_TOKEN}`
+        }
+      });
+    } catch (err) {
+      console.error('❌ ERROR ส่งข้อความ:', err.response?.data || err.message);
+    }
   }
 }
 
-async function listFilesInFolder() {
-  const res = await drive.files.list({
-    q: `'${GOOGLE_FOLDER_ID}' in parents and trashed = false`,
-    fields: 'files(name, webViewLink)'
-  });
-  const files = res.data.files;
-  if (!files.length) return '📂 ไม่มีไฟล์ในโฟลเดอร์';
-  return '📋 รายชื่อไฟล์:\n' + files.map(f => `📄 ${f.name}:\n🔗 ${f.webViewLink}`).join('\n\n');
+function formatDateTH(date) {
+  const d = date.getDate().toString().padStart(2, '0');
+  const m = (date.getMonth() + 1).toString().padStart(2, '0');
+  const y = date.getFullYear();
+  return `${d}/${m}/${y}`;
 }
 
-async function downloadFile(fileId) {
+function generateDateVariants(dateStr) {
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return [];
+  let [d, m, y] = parts;
+  const year = parseInt(y);
+  if (isNaN(year)) return [];
+
+  d = d.padStart(2, '0');
+  m = m.padStart(2, '0');
+
+  const variants = [`${d}/${m}/${y}`];
+  if (year > 2100) {
+    variants.push(`${d}/${m}/${year - 543}`);
+  } else if (year < 2100 && year < 2500) {
+    variants.push(`${d}/${m}/${year + 543}`);
+  }
+  return variants;
+}
+
+async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: false, column: undefined }) {
+  const res = await drive.files.export({
+    fileId: GOOGLE_SHEET_FILE_ID,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  }, { responseType: 'stream' });
+
   const tmpFile = tmp.fileSync({ postfix: '.xlsx' });
   const dest = fs.createWriteStream(tmpFile.name);
-
-  const meta = await drive.files.get({ fileId, fields: 'mimeType' });
-  const mimeType = meta.data.mimeType;
-
-  let res;
-  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-    res = await drive.files.export({
-      fileId,
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }, { responseType: 'stream' });
-  } else {
-    res = await drive.files.get({ fileId, alt: 'media' }, { responseType: 'stream' });
-  }
 
   await new Promise((resolve, reject) => {
     res.data.pipe(dest).on('finish', resolve).on('error', reject);
   });
 
-  return tmpFile.name;
-}
-
-async function searchAndReadFileByName(filename, keyword, sheetName) {
-  const res = await drive.files.list({
-    q: `'${GOOGLE_FOLDER_ID}' in parents and name contains '${filename}' and trashed = false`,
-    fields: 'files(id, name)'
-  });
-  const files = res.data.files;
-  if (!files.length) return `❌ ไม่พบไฟล์ "${filename}"`;
-  const file = files[0];
-  const filePath = await downloadFile(file.id);
-  const workbook = XLSX.readFile(filePath);
-
+  const workbook = XLSX.readFile(tmpFile.name);
   const sheetNamesToSearch = sheetName ? [sheetName] : workbook.SheetNames;
   let allResults = [];
 
   for (const name of sheetNamesToSearch) {
     const sheet = workbook.Sheets[name];
-    if (!sheet) continue;
+    if (!sheet || !sheet['!ref']) continue;
 
-    const sheetRange = XLSX.utils.decode_range(sheet['!ref']);
+    const range = XLSX.utils.decode_range(sheet['!ref']);
     const headers = [];
-    let lastNonEmpty = '';
-    for (let C = sheetRange.s.c; C <= sheetRange.e.c; ++C) {
-      const cell1 = sheet[XLSX.utils.encode_cell({ r: 0, c: C })];
-      const cell2 = sheet[XLSX.utils.encode_cell({ r: 1, c: C })];
-      const val1 = (cell1?.v || '').toString().trim();
-      const val2 = (cell2?.v || '').toString().trim();
-      if (val1) lastNonEmpty = val1;
-      const header = `${lastNonEmpty} ${val2}`.trim();
-      headers.push(header);
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const top = sheet[XLSX.utils.encode_cell({ r: 0, c: C })]?.v || '';
+      const bottom = sheet[XLSX.utils.encode_cell({ r: 1, c: C })]?.v || '';
+      headers.push(`${top} ${bottom}`.trim());
     }
 
-    const data = XLSX.utils.sheet_to_json(sheet, {
+    const json = XLSX.utils.sheet_to_json(sheet, {
+      defval: '-',
+      cellDates: true,
       header: headers,
-      range: 2,
-      defval: ''
+      range: 2
     });
 
-    const filtered = keyword
-      ? data.filter(row => Object.values(row).some(val => val.toString().toLowerCase().includes(keyword.toLowerCase())))
-      : data;
+    const filtered = keyword === '*' ? json : json.filter(row =>
+      Object.entries(row).some(([key, val]) => {
+        if (options.column && !key.includes(options.column)) return false;
 
-    if (!filtered.length) continue;
+        const variants = generateDateVariants(keyword);
 
-    const usedHeaders = headers.filter(h => filtered.some(row => row[h] !== ''));
-    const tableHeader = usedHeaders.join(' | ');
-    const tableRows = filtered.map((row, i) =>
-      `${i + 1} | ` + usedHeaders.map(h => (row[h] || '').toString().replace(/\|/g, '｜').replace(/\n/g, ' ')).join(' | ')
+        if (options.onlyDate) {
+          if (val instanceof Date) return variants.includes(formatDateTH(val));
+          if (typeof val === 'string') {
+            const [d, m, y] = val.split('/');
+            if (d && m && y) {
+              const parsed = new Date(`${y}-${m}-${d}`);
+              if (!isNaN(parsed)) return variants.includes(formatDateTH(parsed));
+            }
+          }
+          if (typeof val === 'number') {
+            const excelDate = new Date(Math.round((val - 25569) * 86400 * 1000));
+            if (!isNaN(excelDate)) return variants.includes(formatDateTH(excelDate));
+          }
+          return false;
+        }
+
+        if (val instanceof Date) return variants.includes(formatDateTH(val));
+        return String(val).toLowerCase().includes(keyword.toLowerCase());
+      })
     );
 
-    const result = `📄 ไฟล์: ${file.name}\n📑 แผ่นงาน: ${name}\n\n${tableHeader}\n${'-'.repeat(tableHeader.length)}\n${tableRows.join('\n—\n')}`;
-    allResults.push(result);
+    if (filtered.length > 0) {
+      const resultText = [`📄 แผ่นงาน: ${name}\n`];
+      for (const row of filtered) {
+        const out = {
+          งาน: '',
+          WBS: '',
+          อนุมัติ: '',
+          ชำระ: '',
+          รับแฟ้ม: '',
+          ระยะทาง: { HT: '', LT: '' },
+          เสา: [],
+          ผู้ควบคุม: '',
+          หมายเหตุ: ''
+        };
+
+        for (const [key, val] of Object.entries(row)) {
+          let displayVal = val;
+
+          if (val instanceof Date) displayVal = formatDateTH(val);
+          else if (typeof val === 'number' && key.includes('ชำระ')) {
+            displayVal = `฿${val.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+          } else if (typeof val === 'number' && key.match(/(ลว|แฟ้ม|อนุมัติ|วันที่)/)) {
+            const excelDate = new Date(Math.round((val - 25569) * 86400 * 1000));
+            if (!isNaN(excelDate)) displayVal = formatDateTH(excelDate);
+          }
+
+          if (key.includes('ชื่องาน')) out.งาน = displayVal;
+          else if (key.includes('WBS')) out.WBS = displayVal;
+          else if (key.includes('อนุมัติ')) out.อนุมัติ = displayVal;
+          else if (key.includes('ชำระ')) out.ชำระ = displayVal;
+          else if (key.includes('รับแฟ้ม')) out.รับแฟ้ม = displayVal;
+          else if (key.includes('HT')) out.ระยะทาง.HT = displayVal;
+          else if (key.includes('LT')) out.ระยะทาง.LT = displayVal;
+          else if (key.trim().startsWith('เสา') && displayVal !== '-') out.เสา.push(`[${key.trim()}:${displayVal}]`);
+          else if (key.includes('ควบคุม')) out.ผู้ควบคุม = displayVal;
+          else if (key.includes('หมายเหตุ')) out.หมายเหตุ = displayVal;
+        }
+
+        if (out.งาน.length > 100) out.งาน = out.งาน.slice(0, 100) + '...';
+
+        resultText.push(
+          `🔹 ชื่องาน: ${out.งาน}\n` +
+          `🧾 WBS: ${out.WBS}\n` +
+          `📅 อนุมัติ/.ลว: ${out.อนุมัติ} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
+          `📏 ระยะ HT: ${out.ระยะทาง.HT} | LT: ${out.ระยะทาง.LT}` +
+          (out.เสา.length ? ` | เสา: ${out.เสา.join(' ')}` : '') +
+          (out.ผู้ควบคุม ? `\n👤 พชง.ควบคุม: ${out.ผู้ควบคุม}` : '') +
+          (out.หมายเหตุ ? `\n📝 หมายเหตุ: ${out.หมายเหตุ}` : '') +
+          `\n---`
+        );
+      }
+      allResults.push(resultText.join('\n'));
+    }
   }
 
-  if (!allResults.length) {
-    return `❌ ไม่พบข้อมูล${keyword ? `ที่มีคำว่า "${keyword}" ` : ''}ในไฟล์ "${file.name}"`;
-  }
-
-  return allResults.join('\n\n');
+  tmpFile.removeCallback();
+  return allResults.length ? allResults.join('\n\n') : '❌ ไม่พบข้อมูลที่ค้นหา';
 }
 
 app.post('/webhook', async (req, res) => {
-  res.sendStatus(200);
-  const messageId = req.body.data.id;
+  console.log('✅ Webhook Triggered');
+  const message = req.body.data;
+  const roomId = message.roomId;
+  const personId = message.personId;
+
+  if (personId === BOT_PERSON_ID) return res.sendStatus(200);
+
   try {
-    const msgRes = await axios.get(`https://webexapis.com/v1/messages/${messageId}`, {
+    const msgRes = await axios.get(`https://webexapis.com/v1/messages/${message.id}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
-    const textRaw = msgRes.data.text;
-    const roomId = msgRes.data.roomId;
-    const personId = msgRes.data.personId;
-    const botInfo = await axios.get('https://webexapis.com/v1/people/me', {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
-    if (personId === botInfo.data.id) return;
-    const botDisplayName = botInfo.data.displayName.toLowerCase().replace(/\s+/g, '');
-    const mentionPattern = new RegExp(`@?${botDisplayName}`, 'gi');
-    const cleanedMessage = textRaw.toLowerCase().replace(mentionPattern, '').trim();
-    console.log(`📨 รับข้อความ: "${textRaw}"`);
-    console.log(`🧠 ตัดแล้วเหลือ: "${cleanedMessage}"`);
 
-    if (cleanedMessage === 'รายการไฟล์') {
-      const fileListMessage = await listFilesInFolder();
-      await sendLongMessage(roomId, fileListMessage);
-    } else if (cleanedMessage === 'ช่วยเหลือ') {
-      const helpText = `🆘 คำสั่งที่ใช้ได้:\n\n` +
-        `📌 รายการไฟล์\n- แสดงรายชื่อไฟล์ทั้งหมดใน Google Drive\n\n` +
-        `📌 ค้นหา <ชื่อไฟล์> <คำค้นหา> [ชื่อแผ่นงาน]\n- เช่น ค้นหา รายงาน.xlsx สมชาย กรกฎาคม2568\n- หรือ ค้นหา รายงาน.xlsx - ธันวาคม2568\n- จะค้นหาคำที่ระบุในทุกคอลัมน์ของทุกแถวในแผ่นงาน (หรือทุกแผ่นถ้าไม่ระบุ)\n\n` +
-        `📌 ช่วยเหลือ\n- แสดงคำสั่งทั้งหมดนี้อีกครั้ง`;
-      await sendLongMessage(roomId, helpText);
-    } else if (cleanedMessage.startsWith('ค้นหา ')) {
-      const parts = cleanedMessage.split(' ').slice(1);
-      const dashIndex = parts.indexOf('-');
-      const filename = parts[0];
-      let keyword = '';
-      let sheetName = '';
-
-      if (dashIndex !== -1) {
-        keyword = '';
-        sheetName = parts.slice(dashIndex + 1).join(' ').trim();
-      } else {
-        keyword = parts[1] || '';
-        sheetName = parts.slice(2).join(' ').trim();
-      }
-
-      if (!filename) {
-        await sendLongMessage(roomId, '⚠️ ต้องระบุชื่อไฟล์อย่างน้อย');
-      } else {
-        const result = await searchAndReadFileByName(filename, keyword, sheetName);
-        await sendLongMessage(roomId, result);
-      }
-    } else {
-      await sendLongMessage(roomId, '❓ ไม่เข้าใจคำสั่ง\nพิมพ์ `ช่วยเหลือ` เพื่อดูคำสั่งที่ใช้ได้');
+    const mentionedPeople = msgRes.data.mentionedPeople || [];
+    if (!mentionedPeople.includes(BOT_PERSON_ID)) {
+      console.log('📭 ข้ามข้อความที่ไม่ mention bot');
+      return res.sendStatus(200);
     }
+
+    const text = msgRes.data.text.trim();
+    const cleanedText = text.replace(WEBEX_BOT_NAME, '').trim();
+    const parts = cleanedText.split(/\s+/);
+    const command = parts[0]?.toLowerCase();
+
+    if (command === 'ค้นหา') {
+      const keyword = parts[1];
+      const arg = parts.slice(2).join(' ').trim();
+      const isDatePattern = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(keyword);
+      const options = isDatePattern ? { onlyDate: true } : {};
+
+      if (keyword === '-') {
+        const sheetName = arg;
+        const result = await searchInGoogleSheet('*', sheetName);
+        await sendLongMessage({ roomId, toPersonId: personId, text: result });
+      } else {
+        if (arg) options.column = arg;
+        const result = await searchInGoogleSheet(keyword, undefined, options);
+        await sendLongMessage({ roomId, toPersonId: personId, text: result });
+      }
+    } else if (command === 'help') {
+      const helpText = '📝 คำสั่ง:\n' +
+        'ค้นหา <คำค้นหา> [ชื่อแผ่นงาน หรือชื่อคอลัมน์]\n' +
+        'ค้นหา - <ชื่อแผ่นงาน>\n' +
+        'พิมพ์ help เพื่อดูคำสั่ง';
+      await sendLongMessage({ roomId, toPersonId: personId, text: helpText });
+    }
+
+    res.sendStatus(200);
   } catch (err) {
-    console.error('❌ ERROR:', err.response?.data || err.message);
+    console.error('❌ ERROR:', err.message);
+    res.sendStatus(500);
   }
 });
 
-// ✅ route เช็กว่าบอทยังรันอยู่
+// ✅ เพิ่ม route GET /
 app.get('/', (req, res) => {
-  res.send('✅ Webex Bot is running');
+  res.send('✅ Webex Bot Server is running!');
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Bot is running at http://localhost:${PORT}`);
+app.listen(PORT, async () => {
+  await getBotPersonId();
+  console.log(`✅ Bot server running on port ${PORT}`);
 });
