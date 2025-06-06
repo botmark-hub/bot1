@@ -18,12 +18,8 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ แก้ตรงนี้: ใช้ GOOGLE_CREDENTIALS จาก .env แล้วแก้ \\n เป็น \n
-const rawCredentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-rawCredentials.private_key = rawCredentials.private_key.replace(/\\n/g, '\n');
-
 const auth = new google.auth.GoogleAuth({
-  credentials: rawCredentials,
+  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
@@ -42,7 +38,10 @@ async function sendLongMessage({ roomId, toPersonId, text }) {
   const chunks = text.match(/([\s\S]{1,7000})(?:\n|$)/g);
   for (const chunk of chunks) {
     try {
-      const payload = roomId ? { roomId, text: chunk } : { toPersonId, text: chunk };
+      const payload = roomId
+        ? { roomId, text: chunk }
+        : { toPersonId, text: chunk };
+
       await axios.post('https://webexapis.com/v1/messages', payload, {
         headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
       });
@@ -70,8 +69,11 @@ function generateDateVariants(dateStr) {
   m = m.padStart(2, '0');
 
   const variants = [`${d}/${m}/${y}`];
-  if (year > 2100) variants.push(`${d}/${m}/${year - 543}`);
-  else if (year < 2100 && year < 2500) variants.push(`${d}/${m}/${year + 543}`);
+  if (year > 2100) {
+    variants.push(`${d}/${m}/${year - 543}`);
+  } else if (year < 2100 && year < 2500) {
+    variants.push(`${d}/${m}/${year + 543}`);
+  }
   return variants;
 }
 
@@ -113,8 +115,6 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
     const filtered = keyword === '*' ? json : json.filter(row =>
       Object.entries(row).some(([key, val]) => {
-        if (options.column && !key.includes(options.column)) return false;
-
         const variants = generateDateVariants(keyword);
 
         if (options.onlyDate) {
@@ -139,7 +139,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
     );
 
     if (filtered.length > 0) {
-      const resultText = [`📄 แผ่นงาน: ${name}\n`];
+      const resultText = [`📄 แผ่นงาน: ${name}`];
       for (const row of filtered) {
         const out = {
           งาน: '',
@@ -155,7 +155,6 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
         for (const [key, val] of Object.entries(row)) {
           let displayVal = val;
-
           if (val instanceof Date) displayVal = formatDateTH(val);
           else if (typeof val === 'number' && key.includes('ชำระ')) {
             displayVal = `฿${val.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -181,7 +180,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
         resultText.push(
           `🔹 ชื่องาน: ${out.งาน}\n` +
           `🧾 WBS: ${out.WBS}\n` +
-          `📅 อนุมัติ/.ลว: ${out.อนุมัติ} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
+          `📅 อนุมัติ/ลว.: ${out.อนุมัติ} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
           `📏 ระยะ HT: ${out.ระยะทาง.HT} | LT: ${out.ระยะทาง.LT}` +
           (out.เสา.length ? ` | เสา: ${out.เสา.join(' ')}` : '') +
           (out.ผู้ควบคุม ? `\n👤 พชง.ควบคุม: ${out.ผู้ควบคุม}` : '') +
@@ -201,27 +200,18 @@ app.post('/webhook', async (req, res) => {
   console.log('✅ Webhook Triggered');
 
   const message = req.body.data;
-  console.log('📥 Incoming message:', message);
-
   const roomId = message.roomId;
   const personId = message.personId;
 
-  if (personId === BOT_PERSON_ID) {
-    console.log('⛔ ข้ามข้อความจากตัวเอง');
-    return res.sendStatus(200);
-  }
+  if (personId === BOT_PERSON_ID) return res.sendStatus(200);
 
   try {
     const msgRes = await axios.get(`https://webexapis.com/v1/messages/${message.id}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
 
-    console.log('📨 Raw Webex message:', msgRes.data);
-
     const text = msgRes.data.text.trim();
     const cleanedText = text.replace(WEBEX_BOT_NAME, '').trim();
-    console.log('💬 Cleaned command text:', cleanedText);
-
     const parts = cleanedText.split(/\s+/);
     const command = parts[0]?.toLowerCase();
 
@@ -243,8 +233,7 @@ app.post('/webhook', async (req, res) => {
     } else if (command === 'help') {
       const helpText = '📝 คำสั่ง:\n' +
         'ค้นหา <คำค้นหา> [ชื่อแผ่นงาน หรือชื่อคอลัมน์]\n' +
-        'ค้นหา - <ชื่อแผ่นงาน>\n' +
-        'พิมพ์ help เพื่อดูคำสั่ง';
+        'ค้นหา - <ชื่อแผ่นงาน>'; 
       await sendLongMessage({ roomId, toPersonId: personId, text: helpText });
     }
 
