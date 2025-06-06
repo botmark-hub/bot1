@@ -115,6 +115,8 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
     const filtered = keyword === '*' ? json : json.filter(row =>
       Object.entries(row).some(([key, val]) => {
+        if (options.column && !key.includes(options.column)) return false;
+
         const variants = generateDateVariants(keyword);
 
         if (options.onlyDate) {
@@ -139,7 +141,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
     );
 
     if (filtered.length > 0) {
-      const resultText = [`📄 แผ่นงาน: ${name}`];
+      const resultText = [`📄 แผ่นงาน: ${name}\n`];
       for (const row of filtered) {
         const out = {
           งาน: '',
@@ -155,6 +157,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
         for (const [key, val] of Object.entries(row)) {
           let displayVal = val;
+
           if (val instanceof Date) displayVal = formatDateTH(val);
           else if (typeof val === 'number' && key.includes('ชำระ')) {
             displayVal = `฿${val.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -180,7 +183,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
         resultText.push(
           `🔹 ชื่องาน: ${out.งาน}\n` +
           `🧾 WBS: ${out.WBS}\n` +
-          `📅 อนุมัติ/ลว.: ${out.อนุมัติ} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
+          `📅 อนุมัติ/.ลว: ${out.อนุมัติ} | ชำระ: ${out.ชำระ} | รับแฟ้ม: ${out.รับแฟ้ม}\n` +
           `📏 ระยะ HT: ${out.ระยะทาง.HT} | LT: ${out.ระยะทาง.LT}` +
           (out.เสา.length ? ` | เสา: ${out.เสา.join(' ')}` : '') +
           (out.ผู้ควบคุม ? `\n👤 พชง.ควบคุม: ${out.ผู้ควบคุม}` : '') +
@@ -198,7 +201,6 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
 app.post('/webhook', async (req, res) => {
   console.log('✅ Webhook Triggered');
-
   const message = req.body.data;
   const roomId = message.roomId;
   const personId = message.personId;
@@ -233,7 +235,8 @@ app.post('/webhook', async (req, res) => {
     } else if (command === 'help') {
       const helpText = '📝 คำสั่ง:\n' +
         'ค้นหา <คำค้นหา> [ชื่อแผ่นงาน หรือชื่อคอลัมน์]\n' +
-        'ค้นหา - <ชื่อแผ่นงาน>'; 
+        'ค้นหา - <ชื่อแผ่นงาน>\n' +
+        'พิมพ์ help เพื่อดูคำสั่ง';
       await sendLongMessage({ roomId, toPersonId: personId, text: helpText });
     }
 
