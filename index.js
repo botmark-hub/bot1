@@ -201,19 +201,29 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
 app.post('/webhook', async (req, res) => {
   console.log('✅ Webhook Triggered');
+
   const message = req.body.data;
+  console.log('📥 Incoming message:', message);
+
   const roomId = message.roomId;
   const personId = message.personId;
 
-  if (personId === BOT_PERSON_ID) return res.sendStatus(200);
+  if (personId === BOT_PERSON_ID) {
+    console.log('⛔ ข้ามข้อความจากตัวเอง');
+    return res.sendStatus(200);
+  }
 
   try {
     const msgRes = await axios.get(`https://webexapis.com/v1/messages/${message.id}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
 
+    console.log('📨 Raw Webex message:', msgRes.data);
+
     const text = msgRes.data.text.trim();
     const cleanedText = text.replace(WEBEX_BOT_NAME, '').trim();
+    console.log('💬 Cleaned command text:', cleanedText);
+
     const parts = cleanedText.split(/\s+/);
     const command = parts[0]?.toLowerCase();
 
