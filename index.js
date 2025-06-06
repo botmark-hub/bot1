@@ -18,7 +18,7 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ เปลี่ยนจาก keyFile เป็น credentials จาก ENV
+// ✅ ใช้ credentials จาก ENV แทน keyFile
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
@@ -256,7 +256,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ✅ เพิ่ม route GET /
+// ✅ Route สำหรับเช็กสถานะ
 app.get('/', (req, res) => {
   res.send('✅ Webex Bot Server is running!');
 });
