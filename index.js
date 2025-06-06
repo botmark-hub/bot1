@@ -207,7 +207,14 @@ app.post('/webhook', async (req, res) => {
   const roomId = message.roomId;
   const personId = message.personId;
 
-  if (personId === BOT_PERSON_ID) return res.sendStatus(200);
+  console.log('📩 message.id:', message.id);
+  console.log('👤 personId:', personId);
+  console.log('🤖 BOT_PERSON_ID:', BOT_PERSON_ID);
+
+  if (!BOT_PERSON_ID || personId === BOT_PERSON_ID) {
+    console.log('⛔ ข้ามข้อความตัวเองหรือยังไม่ได้ตั้งค่า BOT_PERSON_ID');
+    return res.sendStatus(200);
+  }
 
   try {
     const msgRes = await axios.get(`https://webexapis.com/v1/messages/${message.id}`, {
@@ -215,6 +222,8 @@ app.post('/webhook', async (req, res) => {
     });
 
     const mentionedPeople = msgRes.data.mentionedPeople || [];
+    console.log('👥 mentionedPeople:', mentionedPeople);
+
     if (!mentionedPeople.includes(BOT_PERSON_ID)) {
       console.log('📭 ข้ามข้อความที่ไม่ mention bot');
       return res.sendStatus(200);
@@ -250,7 +259,7 @@ app.post('/webhook', async (req, res) => {
 
     res.sendStatus(200);
   } catch (err) {
-    console.error('❌ ERROR:', err.message);
+    console.error('❌ ERROR ใน webhook:', err.response?.data || err.message);
     res.sendStatus(500);
   }
 });
