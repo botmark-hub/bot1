@@ -18,8 +18,9 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
+// ✅ ใช้ credentials จาก ENV (ไม่ใช้ไฟล์)
 const auth = new google.auth.GoogleAuth({
-  keyFile: 'credentials.json',
+  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
 });
 const drive = google.drive({ version: 'v3', auth });
@@ -207,14 +208,7 @@ app.post('/webhook', async (req, res) => {
   const roomId = message.roomId;
   const personId = message.personId;
 
-  console.log('📩 message.id:', message.id);
-  console.log('👤 personId:', personId);
-  console.log('🤖 BOT_PERSON_ID:', BOT_PERSON_ID);
-
-  if (!BOT_PERSON_ID || personId === BOT_PERSON_ID) {
-    console.log('⛔ ข้ามข้อความตัวเองหรือยังไม่ได้ตั้งค่า BOT_PERSON_ID');
-    return res.sendStatus(200);
-  }
+  if (!BOT_PERSON_ID || personId === BOT_PERSON_ID) return res.sendStatus(200);
 
   try {
     const msgRes = await axios.get(`https://webexapis.com/v1/messages/${message.id}`, {
@@ -222,8 +216,6 @@ app.post('/webhook', async (req, res) => {
     });
 
     const mentionedPeople = msgRes.data.mentionedPeople || [];
-    console.log('👥 mentionedPeople:', mentionedPeople);
-
     if (!mentionedPeople.includes(BOT_PERSON_ID)) {
       console.log('📭 ข้ามข้อความที่ไม่ mention bot');
       return res.sendStatus(200);
