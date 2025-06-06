@@ -18,7 +18,7 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ แปลง \\n → \n ใน private_key เพื่อให้ใช้กับ Render ได้
+// ✅ แปลง \\n → \n ใน private_key
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
 
@@ -174,7 +174,7 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
 
           if (key.includes('ชื่องาน')) out.งาน = displayVal;
           else if (key.includes('WBS')) out.WBS = displayVal;
-          else if (key.includes('อนุมัติ')) out.อนุมัติ = displayVal;
+          else if (key.includes('อนุมัติ/.ลว') || key.includes('อนุมัติ')) out.อนุมัติ = displayVal;
           else if (key.includes('ชำระ')) out.ชำระ = displayVal;
           else if (key.includes('รับแฟ้ม')) out.รับแฟ้ม = displayVal;
           else if (key.includes('HT')) out.ระยะทาง.HT = displayVal;
