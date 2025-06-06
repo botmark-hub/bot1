@@ -18,7 +18,7 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ แปลง \\n → \n ใน private_key
+// ✅ Fix: Render-compatible Google credentials
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
 
@@ -42,14 +42,9 @@ async function sendLongMessage({ roomId, toPersonId, text }) {
   const chunks = text.match(/([\s\S]{1,7000})(?:\n|$)/g);
   for (const chunk of chunks) {
     try {
-      const payload = roomId
-        ? { roomId, text: chunk }
-        : { toPersonId, text: chunk };
-
+      const payload = roomId ? { roomId, text: chunk } : { toPersonId, text: chunk };
       await axios.post('https://webexapis.com/v1/messages', payload, {
-        headers: {
-          Authorization: `Bearer ${WEBEX_BOT_TOKEN}`
-        }
+        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
       });
     } catch (err) {
       console.error('❌ ERROR ส่งข้อความ:', err.response?.data || err.message);
@@ -113,15 +108,16 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
     }
 
     const json = XLSX.utils.sheet_to_json(sheet, {
-      defval: '-',
-      cellDates: true,
-      header: headers,
-      range: 2
+      defval: '-', cellDates: true, header: headers, range: 2
     });
 
     const filtered = keyword === '*' ? json : json.filter(row =>
       Object.entries(row).some(([key, val]) => {
-        if (options.column && !key.includes(options.column)) return false;
+        if (options.column) {
+          const col = options.column.replace(/[/.]/g, '').toLowerCase();
+          const keyClean = key.replace(/[/.]/g, '').toLowerCase();
+          if (!keyClean.includes(col)) return false;
+        }
 
         const variants = generateDateVariants(keyword);
 
@@ -150,15 +146,8 @@ async function searchInGoogleSheet(keyword, sheetName, options = { onlyDate: fal
       const resultText = [`📄 แผ่นงาน: ${name}\n`];
       for (const row of filtered) {
         const out = {
-          งาน: '',
-          WBS: '',
-          อนุมัติ: '',
-          ชำระ: '',
-          รับแฟ้ม: '',
-          ระยะทาง: { HT: '', LT: '' },
-          เสา: [],
-          ผู้ควบคุม: '',
-          หมายเหตุ: ''
+          งาน: '', WBS: '', อนุมัติ: '', ชำระ: '', รับแฟ้ม: '',
+          ระยะทาง: { HT: '', LT: '' }, เสา: [], ผู้ควบคุม: '', หมายเหตุ: ''
         };
 
         for (const [key, val] of Object.entries(row)) {
