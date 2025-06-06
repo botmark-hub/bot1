@@ -18,7 +18,6 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ ใช้ credentials จาก ENV แทน keyFile
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.readonly']
@@ -44,9 +43,7 @@ async function sendLongMessage({ roomId, toPersonId, text }) {
         : { toPersonId, text: chunk };
 
       await axios.post('https://webexapis.com/v1/messages', payload, {
-        headers: {
-          Authorization: `Bearer ${WEBEX_BOT_TOKEN}`
-        }
+        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
       });
     } catch (err) {
       console.error('❌ ERROR ส่งข้อความ:', err.response?.data || err.message);
@@ -215,12 +212,6 @@ app.post('/webhook', async (req, res) => {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
 
-    const mentionedPeople = msgRes.data.mentionedPeople || [];
-    if (!mentionedPeople.includes(BOT_PERSON_ID)) {
-      console.log('📭 ข้ามข้อความที่ไม่ mention bot');
-      return res.sendStatus(200);
-    }
-
     const text = msgRes.data.text.trim();
     const cleanedText = text.replace(WEBEX_BOT_NAME, '').trim();
     const parts = cleanedText.split(/\s+/);
@@ -256,7 +247,6 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ✅ Route สำหรับเช็กสถานะ
 app.get('/', (req, res) => {
   res.send('✅ Webex Bot Server is running!');
 });
