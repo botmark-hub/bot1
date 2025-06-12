@@ -18,7 +18,6 @@ const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
 
-// ✅ Fix: Render-compatible Google credentials
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
 
@@ -217,6 +216,26 @@ app.post('/webhook', async (req, res) => {
     const cleanedText = text.replace(WEBEX_BOT_NAME, '').trim();
     const parts = cleanedText.split(/\s+/);
     const command = parts[0]?.toLowerCase();
+
+    if (cleanedText === '') {
+      const introText = `👋 สวัสดี! ฉันคือบอท **${WEBEX_BOT_NAME}** ที่ช่วยค้นหาข้อมูลจาก Google Sheets ได้
+
+🛠 คำสั่งที่สามารถใช้ได้:
+• พิมพ์ \`ค้นหา <คำ>\` เพื่อค้นหาทุกแผ่นงาน
+• พิมพ์ \`ค้นหา <คำ> <ชื่อคอลัมน์>\` เพื่อเจาะจงคอลัมน์
+• พิมพ์ \`ค้นหา <dd/mm/yyyy>\` เพื่อค้นหาวันที่
+• พิมพ์ \`ค้นหา - <ชื่อแผ่นงาน>\` เพื่อดูทุกข้อมูลในแผ่นงาน
+• พิมพ์ \`help\` เพื่อดูคำสั่งอีกครั้ง
+
+📌 ตัวอย่าง:
+ค้นหา นายก้อง พฤษภา 2568
+ค้นหา 10/6/2568
+ค้นหา - มกราคม 2568
+
+หากมีคำถามเพิ่มเติมสามารถ mention ฉันได้เลย! 😊`;
+      await sendLongMessage({ roomId, toPersonId: personId, text: introText });
+      return res.sendStatus(200);
+    }
 
     if (command === 'ค้นหา') {
       const keyword = parts[1];
