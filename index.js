@@ -1,3 +1,4 @@
+// index.js
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -14,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
-const BOT_ID = (process.env.BOT_ID || '').trim(); // ใช้ personId จริงของบอท
+const BOT_ID = (process.env.BOT_ID || '').trim();
 
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
@@ -28,6 +29,21 @@ const auth = new google.auth.GoogleAuth({
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
+
+function flattenText(text) {
+  return (text || '').toString().replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function formatRow(row, sheetName, index) {
+  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
+    `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
+    `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
+    `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${flattenText(row['ระยะทาง HT'])} | ⚡ ระยะทาง LT: ${flattenText(row['ระยะทาง LT'])}\n` +
+    `🪵 เสา 8 : ${flattenText(row['เสา 8']) || '-'} | 🪵 เสา 9 : ${flattenText(row['เสา 9']) || '-'} | 🪵 เสา 12 : ${flattenText(row['เสา 12']) || '-'} | 🪵 เสา 12.20 : ${flattenText(row['เสา 12.20']) || '-'}\n` +
+    `👷‍♂️ พชง.ควบคุม: ${flattenText(row['พชง.ควบคุม'])}\n` +
+    `📌 สถานะงาน: ${flattenText(row['สถานะงาน'])} | 📊 เปอร์เซ็นงาน: ${flattenText(row['เปอร์เซ็นงาน'])}\n` +
+    `🗒️ หมายเหตุ: ${flattenText(row['หมายเหตุ'])}`;
+}
 
 async function getAllSheetNames(spreadsheetId) {
   const res = await sheets.spreadsheets.get({ spreadsheetId });
@@ -62,21 +78,10 @@ async function getSheetWithCombinedHeaders(sheets, spreadsheetId, sheetName) {
   });
 }
 
-function formatRow(row, sheetName, index) {
-  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
-    `📝 ชื่องาน: ${row['ชื่องาน']} | 🧾 WBS: ${row['WBS']}\n` +
-    `💰 ชำระเงิน/ลว: ${row['ชำระเงิน/ลว']} | ✅ อนุมัติ/ลว.: ${row['อนุมัติ/ลว.']} | 📂 รับแฟ้ม: ${row['รับแฟ้ม']}\n` +
-    `🔌 หม้อแปลง: ${row['หม้อแปลง']} | ⚡ ระยะทาง HT: ${row['ระยะทาง HT']} | ⚡ ระยะทาง LT: ${row['ระยะทาง LT']}\n` +
-    `🪵 เสา 8 : ${row['เสา 8'] || '-'} | 🪵 เสา 9 : ${row['เสา 9'] || '-'} | 🪵 เสา 12 : ${row['เสา 12'] || '-'} | 🪵 เสา 12.20 : ${row['เสา 12.20'] || '-'}\n` +
-    `👷‍♂️ พชง.ควบคุม: ${row['พชง.ควบคุม']}\n` +
-    `📌 สถานะงาน: ${row['สถานะงาน']} | 📊 เปอร์เซ็นงาน: ${row['เปอร์เซ็นงาน']}\n` +
-    `🗒️ หมายเหตุ: ${row['หมายเหตุ']}`;
-}
-
 app.post('/webex', async (req, res) => {
   try {
     const data = req.body.data;
-    const personId = (data.personId || '').trim(); // 👈 คนที่ส่งข้อความจริง
+    const personId = (data.personId || '').trim();
 
     if (personId === BOT_ID) {
       console.log('📭 ข้ามข้อความของบอทเอง (personId === BOT_ID)');
@@ -110,7 +115,7 @@ app.post('/webex', async (req, res) => {
 
       if (args.length === 2 && allSheetNames.includes(args[0])) {
         const data = await getSheetWithCombinedHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
-        responseText = data.map((row, idx) => `${args[1]}: ${row[args[1]]}`).join('\n');
+        responseText = data.map((row, idx) => `${args[1]}: ${flattenText(row[args[1]])}`).join('\n');
       } else if (args.length === 1 && allSheetNames.includes(args[0])) {
         const data = await getSheetWithCombinedHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
         responseText = data.map((row, idx) => formatRow(row, args[0], idx)).join('\n\n');
@@ -119,7 +124,7 @@ app.post('/webex', async (req, res) => {
         for (const sheetName of allSheetNames) {
           const data = await getSheetWithCombinedHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
           data.forEach((row, idx) => {
-            const match = Object.values(row).some(v => v.includes(keyword));
+            const match = Object.values(row).some(v => flattenText(v).includes(keyword));
             if (match) results.push(formatRow(row, sheetName, idx));
           });
         }
