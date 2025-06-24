@@ -100,17 +100,19 @@ app.post('/webex', async (req, res) => {
       responseText = `📌 คำสั่งที่ใช้ได้:\n` +
         `1. คำสั่ง @bot_small ค้นหา <คำที่ต้องการค้นหา> → ค้นหาคำในทุกแถว\n` +
         `2. คำสั่ง @bot_small ค้นหา <ชื่อชีต> → แสดงข้อมูลทั้งหมด\n` +
-        `3. คำสั่ง @bot_small แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
-        `4. คำสั่ง @bot_small help → แสดงวิธีใช้ทั้งหมด`;
+        `3. คำสั่ง @bot_small ค้นหา <ชื่อชีต> <ชื่อคอลัมน์> → แสดงเฉพาะคอลัมน์นั้น\n` +
+        `4. คำสั่ง @bot_small แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
+        `5. คำสั่ง @bot_small help → แสดงวิธีใช้ทั้งหมด`;
     } else if (command === 'ค้นหา') {
       const keyword = args.join(' ').replace(/\s+/g, ' ').trim();
+      const sheetNameFromArgs = keyword;
 
       if (args.length === 2 && allSheetNames.includes(args[0])) {
         const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
         responseText = data.map((row, idx) => `${args[1]}: ${flattenText(row[args[1]])}`).join('\n');
-      } else if (args.length === 1 && allSheetNames.includes(args[0])) {
-        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
-        responseText = data.map((row, idx) => formatRow(row, args[0], idx)).join('\n\n');
+      } else if (allSheetNames.includes(sheetNameFromArgs)) {
+        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetNameFromArgs);
+        responseText = data.map((row, idx) => formatRow(row, sheetNameFromArgs, idx)).join('\n\n');
       } else {
         let results = [];
         for (const sheetName of allSheetNames) {
