@@ -70,6 +70,20 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
   });
 }
 
+// 🔁 ส่งข้อความแบบแบ่งก้อน ไม่เกิน 7000 ตัวอักษร
+async function sendMessageInChunks(roomId, message) {
+  const CHUNK_LIMIT = 7000;
+  for (let i = 0; i < message.length; i += CHUNK_LIMIT) {
+    const chunk = message.substring(i, i + CHUNK_LIMIT);
+    await axios.post('https://webexapis.com/v1/messages', {
+      roomId,
+      text: chunk
+    }, {
+      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+    });
+  }
+}
+
 app.post('/webex', async (req, res) => {
   try {
     const data = req.body.data;
@@ -112,7 +126,9 @@ app.post('/webex', async (req, res) => {
         responseText = data.map((row, idx) => `${args[1]}: ${flattenText(row[args[1]])}`).join('\n');
       } else if (allSheetNames.includes(sheetNameFromArgs)) {
         const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetNameFromArgs);
-        responseText = data.map((row, idx) => formatRow(row, sheetNameFromArgs, idx)).join('\n\n');
+        responseText = data.length > 0
+          ? data.map((row, idx) => formatRow(row, sheetNameFromArgs, idx)).join('\n\n')
+          : `⚠️ ไม่พบข้อมูลในชีต "${sheetNameFromArgs}"`;
       } else {
         let results = [];
         for (const sheetName of allSheetNames) {
@@ -168,16 +184,10 @@ app.post('/webex', async (req, res) => {
       responseText = '❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "bot help"';
     }
 
-    await axios.post('https://webexapis.com/v1/messages', {
-      roomId,
-      text: responseText
-    }, {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
-
+    await sendMessageInChunks(roomId, responseText);
     res.status(200).send('OK');
   } catch (error) {
-    console.error(error);
+    console.error('❗ ERROR:', error?.stack || error?.message || error);
     res.status(500).send('Error');
   }
 });
