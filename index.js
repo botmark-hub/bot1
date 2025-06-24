@@ -77,7 +77,11 @@ app.post('/webex', async (req, res) => {
   try {
     const data = req.body.data;
 
+    // ✅ log ว่าได้รับข้อความใหม่
+    console.log(`📩 Triggered by message ID: ${data.id}, จาก user: ${data.personId}`);
+
     if (data.personId === BOT_ID) {
+      console.log('ℹ️ ข้ามข้อความจากบอทเอง');
       return res.status(200).send('Ignore self-message');
     }
 
@@ -88,6 +92,8 @@ app.post('/webex', async (req, res) => {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
     let messageText = messageRes.data.text;
+
+    console.log(`💬 ข้อความที่ได้รับ: "${messageText}"`);
 
     if (messageText.toLowerCase().startsWith(WEBEX_BOT_NAME)) {
       messageText = messageText.substring(WEBEX_BOT_NAME.length).trim();
@@ -186,7 +192,7 @@ app.post('/webex', async (req, res) => {
 
     res.status(200).send('OK');
   } catch (error) {
-    console.error(error);
+    console.error('❌ เกิดข้อผิดพลาด:', error.message);
     res.status(500).send('Error');
   }
 });
