@@ -1,11 +1,12 @@
 if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config(); // โหลด .env ใน dev เท่านั้น
+  require('dotenv').config();
 }
 
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const { google } = require('googleapis');
+
 const app = express();
 app.use(bodyParser.json());
 
@@ -13,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
-const BOT_ID = process.env.BOT_ID; // ✅ ใช้ BOT_ID จาก .env
+const BOT_ID = (process.env.BOT_ID || '').trim(); // ใช้ personId จริงของบอท
 
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
@@ -27,7 +28,6 @@ const auth = new google.auth.GoogleAuth({
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
-const drive = google.drive({ version: 'v3', auth });
 
 async function getAllSheetNames(spreadsheetId) {
   const res = await sheets.spreadsheets.get({ spreadsheetId });
@@ -64,23 +64,22 @@ async function getSheetWithCombinedHeaders(sheets, spreadsheetId, sheetName) {
 
 function formatRow(row, sheetName, index) {
   return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
-    ` ชื่องาน: ${row['ชื่องาน']} | WBS: ${row['WBS']}\n` +
-    ` ชำระเงิน/ลว: ${row['ชำระเงิน/ลว']} | อนุมัติ/ลว.: ${row['อนุมัติ/ลว.']} | รับแฟ้ม: ${row['รับแฟ้ม']}\n` +
-    ` หม้อแปลง: ${row['หม้อแปลง']} | ระยะทาง HT: ${row['ระยะทาง HT']} | ระยะทาง LT: ${row['ระยะทาง LT']}\n` +
-    ` เสา 8 : ${row['เสา 8'] || '-'} | เสา 9 : ${row['เสา 9'] || '-'} | เสา 12 : ${row['เสา 12'] || '-'} | เสา 12.20 : ${row['เสา 12.20'] || '-'}\n` +
-    ` พชง.ควบคุม: ${row['พชง.ควบคุม']}\n` +
-    ` สถานะงาน: ${row['สถานะงาน']} | เปอร์เซ็นงาน: ${row['เปอร์เซ็นงาน']}\n` +
-    ` หมายเหตุ: ${row['หมายเหตุ']}`;
+    `📝 ชื่องาน: ${row['ชื่องาน']} | 🧾 WBS: ${row['WBS']}\n` +
+    `💰 ชำระเงิน/ลว: ${row['ชำระเงิน/ลว']} | ✅ อนุมัติ/ลว.: ${row['อนุมัติ/ลว.']} | 📂 รับแฟ้ม: ${row['รับแฟ้ม']}\n` +
+    `🔌 หม้อแปลง: ${row['หม้อแปลง']} | ⚡ ระยะทาง HT: ${row['ระยะทาง HT']} | ⚡ ระยะทาง LT: ${row['ระยะทาง LT']}\n` +
+    `🪵 เสา 8 : ${row['เสา 8'] || '-'} | 🪵 เสา 9 : ${row['เสา 9'] || '-'} | 🪵 เสา 12 : ${row['เสา 12'] || '-'} | 🪵 เสา 12.20 : ${row['เสา 12.20'] || '-'}\n` +
+    `👷‍♂️ พชง.ควบคุม: ${row['พชง.ควบคุม']}\n` +
+    `📌 สถานะงาน: ${row['สถานะงาน']} | 📊 เปอร์เซ็นงาน: ${row['เปอร์เซ็นงาน']}\n` +
+    `🗒️ หมายเหตุ: ${row['หมายเหตุ']}`;
 }
 
 app.post('/webex', async (req, res) => {
   try {
     const data = req.body.data;
+    const personId = (data.personId || '').trim(); // 👈 คนที่ส่งข้อความจริง
 
-    console.log(`📩 Triggered by message ID: ${data.id}, จาก user: ${data.personId}`);
-
-    if (data.personId === BOT_ID) {
-      console.log('ℹ️ ข้ามข้อความจากบอทเอง');
+    if (personId === BOT_ID) {
+      console.log('📭 ข้ามข้อความของบอทเอง (personId === BOT_ID)');
       return res.status(200).send('Ignore self-message');
     }
 
@@ -91,8 +90,6 @@ app.post('/webex', async (req, res) => {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
     let messageText = messageRes.data.text;
-
-    console.log(`💬 ข้อความที่ได้รับ: "${messageText}"`);
 
     if (messageText.toLowerCase().startsWith(WEBEX_BOT_NAME)) {
       messageText = messageText.substring(WEBEX_BOT_NAME.length).trim();
@@ -106,9 +103,8 @@ app.post('/webex', async (req, res) => {
       responseText = `📌 คำสั่งที่ใช้ได้:\n` +
         `1. คำสั่ง ค้นหา <คำ> → ค้นหาคำในทุกแถว\n` +
         `2. คำสั่ง ค้นหา <ชื่อชีต> → แสดงข้อมูลทั้งหมด\n` +
-        `3. คำสั่ง ค้นหา <ชื่อชีต> <ชื่อคอลัมน์> → แสดงเฉพาะคอลัมน์นั้น\n` +
-        `4. คำสั่ง แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
-        `5. คำสั่ง help → แสดงวิธีใช้ทั้งหมด`;
+        `3. คำสั่ง แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
+        `4. คำสั่ง help → แสดงวิธีใช้ทั้งหมด`;
     } else if (command === 'ค้นหา') {
       const keyword = args.join(' ');
 
@@ -136,8 +132,7 @@ app.post('/webex', async (req, res) => {
         const sheetName = `${args[0]} ${args[1]}`;
         const columnName = args[2];
         const rowNumberStr = args[3];
-        const valueParts = args.slice(4);
-        const newValue = valueParts.join(' ');
+        const newValue = args.slice(4).join(' ');
         const rowNumber = parseInt(rowNumberStr);
 
         if (!allSheetNames.includes(sheetName)) {
@@ -191,7 +186,7 @@ app.post('/webex', async (req, res) => {
 
     res.status(200).send('OK');
   } catch (error) {
-    console.error('❌ เกิดข้อผิดพลาด:', error.message);
+    console.error(error);
     res.status(500).send('Error');
   }
 });
