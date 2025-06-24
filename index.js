@@ -1,5 +1,5 @@
 if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
+  require('dotenv').config(); // โหลด .env ใน dev เท่านั้น
 }
 
 const express = require('express');
@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
 const WEBEX_BOT_NAME = 'bot_small';
-const BOT_ID = process.env.BOT_ID;
+const BOT_ID = process.env.BOT_ID; // ✅ ใช้ BOT_ID จาก .env
 
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
@@ -77,7 +77,6 @@ app.post('/webex', async (req, res) => {
   try {
     const data = req.body.data;
 
-    // ✅ log ว่าได้รับข้อความใหม่
     console.log(`📩 Triggered by message ID: ${data.id}, จาก user: ${data.personId}`);
 
     if (data.personId === BOT_ID) {
