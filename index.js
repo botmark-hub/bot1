@@ -1,4 +1,3 @@
-// index.js
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -35,7 +34,7 @@ function flattenText(text) {
 }
 
 function formatRow(row, sheetName, index) {
-  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
+  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 2})\n` +
     `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
     `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
     `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${flattenText(row['ระยะทาง HT'])} | ⚡ ระยะทาง LT: ${flattenText(row['ระยะทาง LT'])}\n` +
@@ -50,28 +49,21 @@ async function getAllSheetNames(spreadsheetId) {
   return res.data.sheets.map(sheet => sheet.properties.title);
 }
 
-async function getSheetWithCombinedHeaders(sheets, spreadsheetId, sheetName) {
+async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${sheetName}!A1:Z2`
+    range: `${sheetName}!A1:Z`
   });
 
   const rows = res.data.values;
   if (!rows || rows.length < 2) return [];
 
-  const combinedHeaders = rows[0].map((h, i) =>
-    `${(h || '').trim().replace(/\s+/g, ' ')} ${(rows[1][i] || '').trim().replace(/\s+/g, ' ')}`.trim()
-  );
-
-  const resData = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetName}!A3:Z`
-  });
-  const dataRows = resData.data.values || [];
+  const headers = rows[0].map(h => h.trim());
+  const dataRows = rows.slice(1);
 
   return dataRows.map(row => {
     const rowData = {};
-    combinedHeaders.forEach((header, i) => {
+    headers.forEach((header, i) => {
       rowData[header] = row[i] || '';
     });
     return rowData;
@@ -111,18 +103,18 @@ app.post('/webex', async (req, res) => {
         `3. คำสั่ง @bot_small แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
         `4. คำสั่ง @bot_small help → แสดงวิธีใช้ทั้งหมด`;
     } else if (command === 'ค้นหา') {
-      const keyword = args.join(' ');
+      const keyword = args.join(' ').replace(/\s+/g, ' ').trim();
 
       if (args.length === 2 && allSheetNames.includes(args[0])) {
-        const data = await getSheetWithCombinedHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
+        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
         responseText = data.map((row, idx) => `${args[1]}: ${flattenText(row[args[1]])}`).join('\n');
       } else if (args.length === 1 && allSheetNames.includes(args[0])) {
-        const data = await getSheetWithCombinedHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
+        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
         responseText = data.map((row, idx) => formatRow(row, args[0], idx)).join('\n\n');
       } else {
         let results = [];
         for (const sheetName of allSheetNames) {
-          const data = await getSheetWithCombinedHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
+          const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
           data.forEach((row, idx) => {
             const match = Object.values(row).some(v => flattenText(v).includes(keyword));
             if (match) results.push(formatRow(row, sheetName, idx));
@@ -145,36 +137,28 @@ app.post('/webex', async (req, res) => {
         } else {
           const res = await sheets.spreadsheets.values.get({
             spreadsheetId: GOOGLE_SHEET_FILE_ID,
-            range: `${sheetName}!A1:Z2`
+            range: `${sheetName}!A1:Z1`
           });
-          const headers = res.data.values;
-          if (!headers || headers.length < 2) {
-            responseText = '❌ ไม่สามารถโหลด header ได้';
+          const headers = res.data.values?.[0] || [];
+          const headerList = headers.map(h => h.trim());
+
+          const columnIndex = headerList.findIndex(h =>
+            h.toLowerCase() === columnName.toLowerCase() ||
+            h.toLowerCase().includes(columnName.toLowerCase())
+          );
+
+          if (columnIndex === -1) {
+            responseText = `❌ ไม่พบคอลัมน์ "${columnName}" ในชีต "${sheetName}"`;
           } else {
-            const combinedHeaders = headers[0].map((h, i) =>
-              `${(h || '').trim()} ${(headers[1][i] || '').trim()}`.trim()
-            );
-
-            const columnIndex = combinedHeaders.findIndex(h =>
-              h.toLowerCase() === columnName.toLowerCase() ||
-              h.toLowerCase().endsWith(' ' + columnName.toLowerCase()) ||
-              h.toLowerCase().includes(columnName.toLowerCase())
-            );
-
-            if (columnIndex === -1) {
-              responseText = `❌ ไม่พบคอลัมน์ "${columnName}" ในชีต "${sheetName}"`;
-            } else {
-              const matchedHeader = combinedHeaders[columnIndex];
-              const columnLetter = String.fromCharCode(65 + columnIndex);
-              const targetCell = `${columnLetter}${rowNumber}`;
-              await sheets.spreadsheets.values.update({
-                spreadsheetId: GOOGLE_SHEET_FILE_ID,
-                range: `${sheetName}!${targetCell}`,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: { values: [[newValue]] }
-              });
-              responseText = `✅ แก้ไข ${sheetName}!${targetCell} (${matchedHeader}) เป็น "${newValue}" แล้ว`;
-            }
+            const columnLetter = String.fromCharCode(65 + columnIndex);
+            const targetCell = `${columnLetter}${rowNumber}`;
+            await sheets.spreadsheets.values.update({
+              spreadsheetId: GOOGLE_SHEET_FILE_ID,
+              range: `${sheetName}!${targetCell}`,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: { values: [[newValue]] }
+            });
+            responseText = `✅ แก้ไข ${sheetName}!${targetCell} (${headerList[columnIndex]}) เป็น "${newValue}" แล้ว`;
           }
         }
       }
