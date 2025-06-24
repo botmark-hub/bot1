@@ -1,3 +1,4 @@
+// index.js
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -6,18 +7,17 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const { google } = require('googleapis');
-
 const app = express();
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
-const WEBEX_BOT_NAME = 'bot_small';
-const BOT_ID = (process.env.BOT_ID || '').trim();
+const WEBEX_BOT_NAME = 'bot';
+const BOT_ID = process.env.BOT_ID;
 
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-rawCreds.private_key = rawCreds.private_key.replace(/\n/g, '\n');
+rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
 
 const auth = new google.auth.GoogleAuth({
   credentials: rawCreds,
@@ -28,145 +28,128 @@ const auth = new google.auth.GoogleAuth({
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
-
-function flattenText(text) {
-  return (text || '').toString().replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function formatRow(row, sheetName, index) {
-  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 2})\n` +
-    `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
-    `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
-    `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${flattenText(row['ระยะทาง HT'])} | ⚡ ระยะทาง LT: ${flattenText(row['ระยะทาง LT'])}\n` +
-    `🪵 เสา 8 : ${flattenText(row['เสา 8']) || '-'} | 🪵 เสา 9 : ${flattenText(row['เสา 9']) || '-'} | 🪵 เสา 12 : ${flattenText(row['เสา 12']) || '-'} | 🪵 เสา 12.20 : ${flattenText(row['เสา 12.20']) || '-'}\n` +
-    `👷‍♂️ พชง.ควบคุม: ${flattenText(row['พชง.ควบคุม'])}\n` +
-    `📌 สถานะงาน: ${flattenText(row['สถานะงาน'])} | 📊 เปอร์เซ็นงาน: ${flattenText(row['เปอร์เซ็นงาน'])}\n` +
-    `🗒️ หมายเหตุ: ${flattenText(row['หมายเหตุ'])}`;
-}
+const drive = google.drive({ version: 'v3', auth });
 
 async function getAllSheetNames(spreadsheetId) {
   const res = await sheets.spreadsheets.get({ spreadsheetId });
   return res.data.sheets.map(sheet => sheet.properties.title);
 }
 
-async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
+async function getSheetData(spreadsheetId, sheetName) {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${sheetName}!A1:Z`
+    range: `${sheetName}`
   });
-
   const rows = res.data.values;
-  if (!rows || rows.length < 2) return [];
-
-  const headers = rows[0].map(h => h.trim());
-  const dataRows = rows.slice(1);
-
-  return dataRows.map(row => {
+  if (!rows || rows.length === 0) return [];
+  const headers = rows[0];
+  return rows.slice(1).map(row => {
     const rowData = {};
     headers.forEach((header, i) => {
-      rowData[header] = row[i] || '';
+      rowData[header] = (row[i] || '').replace(/\n/g, ' ').trim();
     });
     return rowData;
   });
 }
 
-async function sendMessageInChunks(roomId, fullMessage) {
-  const CHUNK_LIMIT = 7000;
-  const lines = fullMessage.split('\n\n');
-  let buffer = '';
-  for (const line of lines) {
-    if ((buffer + '\n\n' + line).length > CHUNK_LIMIT) {
-      const chunk = buffer.trim();
-      if (chunk.length > 0) {
-        try {
-          await axios.post('https://webexapis.com/v1/messages', {
-            roomId,
-            text: String(chunk).substring(0, CHUNK_LIMIT - 50) + '\n\n⚠️ ข้อความบางส่วนอาจถูกตัด'
-          }, {
-            headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-          });
-        } catch (err) {
-          console.error('❗ Error sending chunk:', err?.response?.data || err.message);
-        }
-      }
-      buffer = line;
-    } else {
-      buffer += (buffer ? '\n\n' : '') + line;
-    }
-  }
-  if (buffer.trim().length > 0) {
+function formatRow(row, sheetName, index) {
+  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 2})\n` +
+    `📝 ชื่องาน: ${row['ชื่องาน'] || ''} | 🧾 WBS: ${row['WBS'] || ''}\n` +
+    `💰 ชำระเงิน/ลว.: ${row['ชำระเงิน/ลว.'] || ''} | ✅ อนุมัติ/ลว.: ${row['อนุมัติ/ลว.'] || ''} | 📂 รับแฟ้ม: ${row['รับแฟ้ม'] || ''}\n` +
+    `🔌 หม้อแปลง: ${row['หม้อแปลง'] || ''} | ⚡ ระยะทาง HT: ${row['ระยะทาง HT'] || ''} | ⚡ ระยะทาง LT: ${row['ระยะทาง LT'] || ''}\n` +
+    `🪵 เสา 8 : ${row['เสา 8'] || '-'} | 🪵 เสา 9 : ${row['เสา 9'] || '-'} | 🪵 เสา 12 : ${row['เสา 12'] || '-'} | 🪵 เสา 12.20 : ${row['เสา 12.20'] || '-'}\n` +
+    `👷‍♂️ พชง.ควบคุม: ${row['พชง.ควบคุม'] || ''}\n` +
+    `📌 สถานะงาน: ${row['สถานะงาน'] || ''} | 📊 เปอร์เซ็นงาน: ${row['เปอร์เซ็นงาน'] || ''}\n` +
+    `🗒️ หมายเหตุ: ${row['หมายเหตุ'] || ''}\n`;
+}
+
+async function sendMessageInChunks(roomId, text) {
+  const MAX_LENGTH = 7000;
+  let index = 0;
+  while (index < text.length) {
+    const chunk = text.substring(index, index + MAX_LENGTH);
     try {
+      console.log(`✅ ส่งข้อความ chunk ขนาด: ${chunk.length} ตัวอักษร`);
       await axios.post('https://webexapis.com/v1/messages', {
         roomId,
-        text: String(buffer)
+        text: chunk
       }, {
-        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+        headers: {
+          Authorization: `Bearer ${WEBEX_BOT_TOKEN}`
+        }
       });
-    } catch (err) {
-      console.error('❗ Error sending last chunk:', err?.response?.data || err.message);
+    } catch (error) {
+      console.error('❗ Error sending chunk:', error.response?.data || error.message);
     }
+    index += MAX_LENGTH;
   }
 }
 
 app.post('/webex', async (req, res) => {
+  const messageId = req.body.data.id;
   try {
-    const data = req.body.data;
-    const personId = (data.personId || '').trim();
-    if (personId === BOT_ID) return res.status(200).send('Ignore self-message');
-
-    const messageId = data.id;
-    const roomId = data.roomId;
-
     const messageRes = await axios.get(`https://webexapis.com/v1/messages/${messageId}`, {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
-    let messageText = messageRes.data.text;
-    if (messageText.toLowerCase().startsWith(WEBEX_BOT_NAME)) {
-      messageText = messageText.substring(WEBEX_BOT_NAME.length).trim();
-    }
-
-    let responseText = '';
-    const [command, ...args] = messageText.split(' ');
-    const allSheetNames = await getAllSheetNames(GOOGLE_SHEET_FILE_ID);
-
-    if (command === 'help') {
-      responseText = `📌 คำสั่งที่ใช้ได้:\n` +
-        `1. @bot_small ค้นหา <คำ> → ค้นหาในทุกชีต\n` +
-        `2. @bot_small ค้นหา <ชื่อชีต> → แสดงข้อมูลทั้งชีต\n` +
-        `3. @bot_small ค้นหา <ชื่อชีต> <คอลัมน์> → แสดงเฉพาะคอลัมน์นั้น\n` +
-        `4. @bot_small help → แสดงคำสั่งทั้งหมด`;
-    } else if (command === 'ค้นหา') {
-      const keyword = args.join(' ').replace(/\s+/g, ' ').trim();
-      const sheetNameFromArgs = keyword;
-      if (args.length === 2 && allSheetNames.includes(args[0])) {
-        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, args[0]);
-        responseText = data.map((row, idx) => `${args[1]}: ${flattenText(row[args[1]])}`).join('\n');
-      } else if (allSheetNames.includes(sheetNameFromArgs)) {
-        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetNameFromArgs);
-        responseText = data.length > 0
-          ? data.map((row, idx) => formatRow(row, sheetNameFromArgs, idx)).join('\n\n')
-          : `⚠️ ไม่พบข้อมูลในชีต "${sheetNameFromArgs}"`;
-      } else {
-        let results = [];
-        for (const sheetName of allSheetNames) {
-          const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
-          data.forEach((row, idx) => {
-            const match = Object.values(row).some(v => flattenText(v).includes(keyword));
-            if (match) results.push(formatRow(row, sheetName, idx));
-          });
-        }
-        responseText = results.length ? results.join('\n\n') : '❌ ไม่พบข้อมูลที่ต้องการ';
+      headers: {
+        Authorization: `Bearer ${WEBEX_BOT_TOKEN}`
       }
+    });
+
+    const message = messageRes.data.text.trim();
+    const roomId = messageRes.data.roomId;
+    const personId = messageRes.data.personId;
+
+    if (personId === BOT_ID) return res.sendStatus(200);
+
+    const command = message.replace(/@?\b${WEBEX_BOT_NAME}\b/i, '').trim();
+
+    if (command.toLowerCase() === 'help') {
+      const helpText = `🧠 คำสั่งที่ใช้ได้:\n` +
+        `• ค้นหา <คำ> → ค้นหาข้อมูลในทุกชีต\n` +
+        `• ค้นหา <ชื่อชีต> → แสดงข้อมูลทั้งหมดในชีต\n` +
+        `• ค้นหา <ชื่อชีต> <ชื่อคอลัมน์> → แสดงเฉพาะคอลัมน์ที่ต้องการ\n` +
+        `• help → แสดงคำสั่งทั้งหมด`;
+      await sendMessageInChunks(roomId, helpText);
+    } else if (command.startsWith('ค้นหา')) {
+      const args = command.split(' ');
+      const keywords = args.slice(1);
+
+      if (keywords.length === 0) {
+        await sendMessageInChunks(roomId, '⚠️ กรุณาระบุคำค้นหาด้วย');
+        return res.sendStatus(200);
+      }
+
+      const allSheets = await getAllSheetNames(GOOGLE_SHEET_FILE_ID);
+      let foundText = '';
+
+      for (const sheetName of allSheets) {
+        const data = await getSheetData(GOOGLE_SHEET_FILE_ID, sheetName);
+
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          const rowText = Object.values(row).join(' ');
+
+          if (keywords.every(kw => rowText.includes(kw))) {
+            foundText += formatRow(row, sheetName, i) + '\n';
+          }
+        }
+      }
+
+      if (!foundText) {
+        foundText = '🔍 ไม่พบข้อมูลที่ค้นหา';
+      }
+
+      await sendMessageInChunks(roomId, foundText);
     } else {
-      responseText = '❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "bot help"';
+      await sendMessageInChunks(roomId, '⚠️ ไม่รู้จักคำสั่ง พิมพ์ `help` เพื่อดูตัวอย่าง');
     }
 
-    await sendMessageInChunks(roomId, responseText);
-    res.status(200).send('OK');
-  } catch (error) {
-    console.error('❗ ERROR:', error?.stack || error?.message || error);
-    res.status(500).send('Error');
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('❗ ERROR:', err);
+    res.sendStatus(500);
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Bot พร้อมทำงานที่พอร์ต ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
+});
