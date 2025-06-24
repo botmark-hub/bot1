@@ -35,13 +35,13 @@ function flattenText(text) {
 
 function formatRow(row, sheetName, index) {
   return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 2})\n` +
-    `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🨾 WBS: ${flattenText(row['WBS'])}\n` +
-    `💰 ชำระเงิน/\u0e25ว.: ${flattenText(row['ชำระเงิน/\u0e25ว.'])} | ✅ อนุมัติ/\u0e25ว.: ${flattenText(row['อนุมัติ/\u0e25ว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
+    `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
+    `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
     `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${flattenText(row['ระยะทาง HT'])} | ⚡ ระยะทาง LT: ${flattenText(row['ระยะทาง LT'])}\n` +
-    `🩵 เสา 8 : ${flattenText(row['เสา 8']) || '-'} | 🩵 เสา 9 : ${flattenText(row['เสา 9']) || '-'} | 🩵 เสา 12 : ${flattenText(row['เสา 12']) || '-'} | 🩵 เสา 12.20 : ${flattenText(row['เสา 12.20']) || '-'}\n` +
+    `🪵 เสา 8 : ${flattenText(row['เสา 8']) || '-'} | 🪵 เสา 9 : ${flattenText(row['เสา 9']) || '-'} | 🪵 เสา 12 : ${flattenText(row['เสา 12']) || '-'} | 🪵 เสา 12.20 : ${flattenText(row['เสา 12.20']) || '-'}\n` +
     `👷‍♂️ พชง.ควบคุม: ${flattenText(row['พชง.ควบคุม'])}\n` +
     `📌 สถานะงาน: ${flattenText(row['สถานะงาน'])} | 📊 เปอร์เซ็นงาน: ${flattenText(row['เปอร์เซ็นงาน'])}\n` +
-    `🗒️ หมายเทส: ${flattenText(row['หมายเทส'])}`;
+    `🗒️ หมายเหตุ: ${flattenText(row['หมายเหตุ'])}`;
 }
 
 async function getAllSheetNames(spreadsheetId) {
@@ -76,24 +76,35 @@ async function sendMessageInChunks(roomId, fullMessage) {
   let buffer = '';
   for (const line of lines) {
     if ((buffer + '\n\n' + line).length > CHUNK_LIMIT) {
-      await axios.post('https://webexapis.com/v1/messages', {
-        roomId,
-        text: buffer
-      }, {
-        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-      });
+      const chunk = buffer.trim();
+      if (chunk.length > 0) {
+        try {
+          await axios.post('https://webexapis.com/v1/messages', {
+            roomId,
+            text: String(chunk).substring(0, CHUNK_LIMIT - 50) + '\n\n⚠️ ข้อความบางส่วนอาจถูกตัด'
+          }, {
+            headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+          });
+        } catch (err) {
+          console.error('❗ Error sending chunk:', err?.response?.data || err.message);
+        }
+      }
       buffer = line;
     } else {
       buffer += (buffer ? '\n\n' : '') + line;
     }
   }
-  if (buffer) {
-    await axios.post('https://webexapis.com/v1/messages', {
-      roomId,
-      text: buffer
-    }, {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
+  if (buffer.trim().length > 0) {
+    try {
+      await axios.post('https://webexapis.com/v1/messages', {
+        roomId,
+        text: String(buffer)
+      }, {
+        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+      });
+    } catch (err) {
+      console.error('❗ Error sending last chunk:', err?.response?.data || err.message);
+    }
   }
 }
 
@@ -119,11 +130,11 @@ app.post('/webex', async (req, res) => {
     const allSheetNames = await getAllSheetNames(GOOGLE_SHEET_FILE_ID);
 
     if (command === 'help') {
-      responseText = `\ud83d\udccc \u0e04\u0e33\u0e2a\u0e31\u0e48\u0e07\u0e17\u0e35\u0e48\u0e43\u0e0a\u0e49\u0e44\u0e14\u0e49:\n` +
-        `1. @bot_small \u0e04\u0e49\u0e19\u0e2b\u0e32 <\u0e04\u0e33> \u2192 \u0e04\u0e49\u0e19\u0e2b\u0e32\u0e17\u0e38\u0e01\u0e0a\u0e35\u0e15\u0e17\u0e35\u0e48\u0e21\u0e35\n` +
-        `2. @bot_small \u0e04\u0e49\u0e19\u0e2b\u0e32 <\u0e0a\u0e37\u0e48\u0e2d\u0e0a\u0e35\u0e15> \u2192 \u0e41\u0e2a\u0e14\u0e07\u0e17\u0e38\u0e01\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\n` +
-        `3. @bot_small \u0e04\u0e49\u0e19\u0e2b\u0e32 <\u0e0a\u0e37\u0e48\u0e2d\u0e0a\u0e35\u0e15> <\u0e04\u0e2d\u0e25\u0e31\u0e21\u0e19\u0e4c> \u2192 \u0e41\u0e2a\u0e14\u0e07\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e04\u0e2d\u0e25\u0e31\u0e21\u0e19\u0e4c\n` +
-        `4. @bot_small \u0e41\u0e01\u0e49\u0e44\u0e02 <\u0e0a\u0e37\u0e48\u0e2d\u0e0a\u0e35\u0e15> <\u0e04\u0e2d\u0e25\u0e31\u0e21\u0e19\u0e4c> <\u0e41\u0e16\u0e27> <\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21> \u2192 \u0e41\u0e01\u0e49\u0e44\u0e02\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\n`;
+      responseText = `📌 คำสั่งที่ใช้ได้:\n` +
+        `1. @bot_small ค้นหา <คำ> → ค้นหาในทุกชีต\n` +
+        `2. @bot_small ค้นหา <ชื่อชีต> → แสดงข้อมูลทั้งชีต\n` +
+        `3. @bot_small ค้นหา <ชื่อชีต> <คอลัมน์> → แสดงเฉพาะคอลัมน์นั้น\n` +
+        `4. @bot_small help → แสดงคำสั่งทั้งหมด`;
     } else if (command === 'ค้นหา') {
       const keyword = args.join(' ').replace(/\s+/g, ' ').trim();
       const sheetNameFromArgs = keyword;
