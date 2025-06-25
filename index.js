@@ -1,3 +1,4 @@
+// index.js
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -35,12 +36,17 @@ function flattenText(text) {
   return (text || '').toString().replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function getCell(row, keyword) {
+  const match = Object.keys(row).find(k => k.trim().endsWith(keyword));
+  return flattenText(row[match]) || '-';
+}
+
 function formatRow(row, sheetName, index) {
   return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
     `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
     `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
-    `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${flattenText(row['ระยะทาง HT'])} | ⚡ ระยะทาง LT: ${flattenText(row['ระยะทาง LT'])}\n` +
-    `🪵 เสา 8 : ${flattenText(row['เสา 8']) || '-'} | 🪵 เสา 9 : ${flattenText(row['เสา 9']) || '-'} | 🪵 เสา 12 : ${flattenText(row['เสา 12']) || '-'} | 🪵 เสา 12.20 : ${flattenText(row['เสา 12.20']) || '-'}\n` +
+    `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${getCell(row, 'HT')} | ⚡ ระยะทาง LT: ${getCell(row, 'LT')}\n` +
+    `🪵 เสา 8 : ${getCell(row, '8')} | 🪵 เสา 9 : ${getCell(row, '9')} | 🪵 เสา 12 : ${getCell(row, '12')} | 🪵 เสา 12.20 : ${getCell(row, '12.20')}\n` +
     `👷‍♂️ พชง.ควบคุม: ${flattenText(row['พชง.ควบคุม'])}\n` +
     `📌 สถานะงาน: ${flattenText(row['สถานะงาน'])} | 📊 เปอร์เซ็นงาน: ${flattenText(row['เปอร์เซ็นงาน'])}\n` +
     `🗒️ หมายเหตุ: ${flattenText(row['หมายเหตุ'])}`;
