@@ -70,17 +70,22 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
   });
 }
 
-// 🔁 ส่งข้อความแบบแบ่งก้อน ไม่เกิน 7000 ตัวอักษร
+// ✅ ส่งข้อความแบบแบ่งก้อน (ใช้ markdown ป้องกัน error 400)
 async function sendMessageInChunks(roomId, message) {
   const CHUNK_LIMIT = 7000;
   for (let i = 0; i < message.length; i += CHUNK_LIMIT) {
     const chunk = message.substring(i, i + CHUNK_LIMIT);
-    await axios.post('https://webexapis.com/v1/messages', {
-      roomId,
-      text: chunk
-    }, {
-      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-    });
+    try {
+      console.log(`🟢 Sending chunk (${chunk.length} characters)`);
+      await axios.post('https://webexapis.com/v1/messages', {
+        roomId,
+        markdown: chunk
+      }, {
+        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+      });
+    } catch (err) {
+      console.error('❌ Webex error:', err.response?.data || err.message);
+    }
   }
 }
 
@@ -90,7 +95,6 @@ app.post('/webex', async (req, res) => {
     const personId = (data.personId || '').trim();
 
     if (personId === BOT_ID) {
-      console.log('📭 ข้ามข้อความของบอทเอง (personId === BOT_ID)');
       return res.status(200).send('Ignore self-message');
     }
 
@@ -112,9 +116,11 @@ app.post('/webex', async (req, res) => {
 
     if (command === 'help') {
       responseText = `📌 คำสั่งที่ใช้ได้:\n` +
-        `1. คำสั่ง @bot_small ค้นหา <คำที่ต้องการค้นหา> → จะค้นหารายชื่องานที่มีคำที่ต้องการค้นหาออกมา\n` +
-        `2. คำสั่ง @bot_small แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
-        `3. คำสั่ง @bot_small help → แสดงวิธีใช้ทั้งหมด`;
+        `1. @${WEBEX_BOT_NAME} ค้นหา <คำ> → ค้นหาทั้งหมด\n` +
+        `2. @${WEBEX_BOT_NAME} ค้นหา <ชื่อชีต> → แสดงทั้งหมดในชีตนั้น\n` +
+        `3. @${WEBEX_BOT_NAME} ค้นหา <ชื่อชีต> <ชื่อคอลัมน์> → แสดงเฉพาะคอลัมน์\n` +
+        `4. @${WEBEX_BOT_NAME} แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูล\n` +
+        `5. @${WEBEX_BOT_NAME} help → วิธีใช้ทั้งหมด`;
     } else if (command === 'ค้นหา') {
       const keyword = args.join(' ').replace(/\s+/g, ' ').trim();
       const sheetNameFromArgs = keyword;
@@ -140,7 +146,7 @@ app.post('/webex', async (req, res) => {
       }
     } else if (command === 'แก้ไข') {
       if (args.length < 5) {
-        responseText = '❗ รูปแบบคำสั่งไม่ถูกต้อง ควรเป็น:\nแก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>';
+        responseText = '❗ รูปแบบคำสั่งไม่ถูกต้อง:\nแก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>';
       } else {
         const sheetName = `${args[0]} ${args[1]}`;
         const columnName = args[2];
@@ -149,7 +155,7 @@ app.post('/webex', async (req, res) => {
         const rowNumber = parseInt(rowNumberStr);
 
         if (!allSheetNames.includes(sheetName)) {
-          responseText = `❌ ไม่พบชีตชื่อ "${sheetName}"`;
+          responseText = `❌ ไม่พบชีต "${sheetName}"`;
         } else {
           const res = await sheets.spreadsheets.values.get({
             spreadsheetId: GOOGLE_SHEET_FILE_ID,
@@ -179,7 +185,7 @@ app.post('/webex', async (req, res) => {
         }
       }
     } else {
-      responseText = '❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "bot help"';
+      responseText = '❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "@bot_small help"';
     }
 
     await sendMessageInChunks(roomId, responseText);
