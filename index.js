@@ -19,7 +19,7 @@ const WEBEX_BOT_NAME = 'bot_small';
 const BOT_ID = (process.env.BOT_ID || '').trim();
 
 const rawCreds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-rawCreds.private_key = rawCreds.private_key.replace(/\\n/g, '\n');
+rawCreds.private_key = rawCreds.private_key.replace(/\n/g, '\n');
 
 const auth = new google.auth.GoogleAuth({
   credentials: rawCreds,
@@ -36,9 +36,9 @@ function flattenText(text) {
 }
 
 function formatRow(row, sheetName, index) {
-  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 2})\n` +
+  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
     `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
-    `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
+    `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
     `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${flattenText(row['ระยะทาง HT'])} | ⚡ ระยะทาง LT: ${flattenText(row['ระยะทาง LT'])}\n` +
     `🪵 เสา 8 : ${flattenText(row['เสา 8']) || '-'} | 🪵 เสา 9 : ${flattenText(row['เสา 9']) || '-'} | 🪵 เสา 12 : ${flattenText(row['เสา 12']) || '-'} | 🪵 เสา 12.20 : ${flattenText(row['เสา 12.20']) || '-'}\n` +
     `👷‍♂️ พชง.ควบคุม: ${flattenText(row['พชง.ควบคุม'])}\n` +
@@ -58,10 +58,17 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
   });
 
   const rows = res.data.values;
-  if (!rows || rows.length < 2) return [];
+  if (!rows || rows.length < 3) return [];
 
-  const headers = rows[0].map(h => h.trim());
-  const dataRows = rows.slice(1);
+  const headerRow1 = rows[0];
+  const headerRow2 = rows[1];
+
+  const headers = headerRow2.map((h2, i) => {
+    const h1 = headerRow1[i] || '';
+    return `${h1} ${h2}`.trim();
+  });
+
+  const dataRows = rows.slice(2);
 
   return dataRows.map(row => {
     const rowData = {};
@@ -86,8 +93,7 @@ async function sendMessageInChunks(roomId, message) {
 }
 
 app.post('/webex', async (req, res) => {
-  console.log('📥 Webhook Triggered:', JSON.stringify(req.body, null, 2)); // Log trigger
-
+  console.log('📥 Webhook Triggered:', JSON.stringify(req.body, null, 2));
   try {
     const data = req.body.data;
     const personId = (data.personId || '').trim();
@@ -95,13 +101,11 @@ app.post('/webex', async (req, res) => {
 
     const messageId = data.id;
     const roomId = data.roomId;
-
     const messageRes = await axios.get(`https://webexapis.com/v1/messages/${messageId}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
-
     let messageText = messageRes.data.text;
-    console.log('📨 ข้อความที่เข้ามา:', messageText); // Log ข้อความจริง
+    console.log('📨 ข้อความที่เข้ามา:', messageText);
 
     if (messageText.toLowerCase().startsWith(WEBEX_BOT_NAME)) {
       messageText = messageText.substring(WEBEX_BOT_NAME.length).trim();
@@ -112,22 +116,19 @@ app.post('/webex', async (req, res) => {
     const allSheetNames = await getAllSheetNames(GOOGLE_SHEET_FILE_ID);
 
     if (command === 'help') {
-      responseText =
-        `📌 คำสั่งที่ใช้ได้:\n` +
+      responseText = `📌 คำสั่งที่ใช้ได้:\n` +
         `1. @${WEBEX_BOT_NAME} ค้นหา <คำที่ต้องการค้นหา> → ค้นหาข้อมูลในทุกชีต\n` +
         `2. @${WEBEX_BOT_NAME} ค้นหา <ชื่อชีต> → ส่งข้อมูลในชีตนั้นเป็นไฟล์ .txt\n` +
         `3. @${WEBEX_BOT_NAME} แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ> → แก้ไขข้อมูลในเซลล์\n` +
         `4. @${WEBEX_BOT_NAME} help → แสดงวิธีใช้ทั้งหมด`;
+      await sendMessageInChunks(roomId, responseText);
     } else if (command === 'ค้นหา') {
       const keyword = args.join(' ').trim();
       const sheetNameFromArgs = keyword;
-
-      // ✅ ค้นหาจากชื่อชีต แล้วส่ง .txt
       if (allSheetNames.includes(sheetNameFromArgs)) {
         const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetNameFromArgs);
         if (data.length === 0) {
-          responseText = `⚠️ ไม่พบข้อมูลในชีต "${sheetNameFromArgs}"`;
-          await sendMessageInChunks(roomId, responseText);
+          await sendMessageInChunks(roomId, `⚠️ ไม่พบข้อมูลในชีต "${sheetNameFromArgs}"`);
         } else {
           const content = data.map((row, idx) => formatRow(row, sheetNameFromArgs, idx)).join('\n\n');
           const tempFilePath = `/tmp/${sheetNameFromArgs}.txt`;
@@ -146,9 +147,7 @@ app.post('/webex', async (req, res) => {
 
           fs.unlinkSync(tempFilePath);
         }
-      }
-      // ✅ ค้นหาทั่วไปทุกชีต
-      else {
+      } else {
         let results = [];
         for (const sheetName of allSheetNames) {
           const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
@@ -162,7 +161,7 @@ app.post('/webex', async (req, res) => {
       }
     } else if (command === 'แก้ไข') {
       if (args.length < 5) {
-        responseText = '❗ รูปแบบคำสั่งไม่ถูกต้อง ควรเป็น:\nแก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>';
+        await sendMessageInChunks(roomId, '❗ รูปแบบคำสั่งไม่ถูกต้อง ควรเป็น:\nแก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>');
       } else {
         const sheetName = `${args[0]} ${args[1]}`;
         const columnName = args[2];
@@ -171,11 +170,11 @@ app.post('/webex', async (req, res) => {
         const rowNumber = parseInt(rowNumberStr);
 
         if (!allSheetNames.includes(sheetName)) {
-          responseText = `❌ ไม่พบชีตชื่อ "${sheetName}"`;
+          await sendMessageInChunks(roomId, `❌ ไม่พบชีตชื่อ "${sheetName}"`);
         } else {
           const res = await sheets.spreadsheets.values.get({
             spreadsheetId: GOOGLE_SHEET_FILE_ID,
-            range: `${sheetName}!A1:Z1`
+            range: `${sheetName}!A2:Z2`
           });
           const headers = res.data.values?.[0] || [];
           const headerList = headers.map(h => h.trim());
@@ -186,7 +185,7 @@ app.post('/webex', async (req, res) => {
           );
 
           if (columnIndex === -1) {
-            responseText = `❌ ไม่พบคอลัมน์ "${columnName}" ในชีต "${sheetName}"`;
+            await sendMessageInChunks(roomId, `❌ ไม่พบคอลัมน์ "${columnName}" ในชีต "${sheetName}"`);
           } else {
             const columnLetter = String.fromCharCode(65 + columnIndex);
             const targetCell = `${columnLetter}${rowNumber}`;
@@ -196,14 +195,12 @@ app.post('/webex', async (req, res) => {
               valueInputOption: 'USER_ENTERED',
               requestBody: { values: [[newValue]] }
             });
-            responseText = `✅ แก้ไข ${sheetName}!${targetCell} (${headerList[columnIndex]}) เป็น "${newValue}" แล้ว`;
+            await sendMessageInChunks(roomId, `✅ แก้ไข ${sheetName}!${targetCell} (${headerList[columnIndex]}) เป็น "${newValue}" แล้ว`);
           }
         }
-        await sendMessageInChunks(roomId, responseText);
       }
     } else {
-      responseText = '❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "help"';
-      await sendMessageInChunks(roomId, responseText);
+      await sendMessageInChunks(roomId, '❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "help"');
     }
 
     res.status(200).send('OK');
