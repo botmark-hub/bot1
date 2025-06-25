@@ -86,10 +86,11 @@ async function sendMessageInChunks(roomId, message) {
 }
 
 app.post('/webex', async (req, res) => {
+  console.log('📥 Webhook Triggered:', JSON.stringify(req.body, null, 2)); // Log trigger
+
   try {
     const data = req.body.data;
     const personId = (data.personId || '').trim();
-
     if (personId === BOT_ID) return res.status(200).send('Ignore self-message');
 
     const messageId = data.id;
@@ -100,6 +101,8 @@ app.post('/webex', async (req, res) => {
     });
 
     let messageText = messageRes.data.text;
+    console.log('📨 ข้อความที่เข้ามา:', messageText); // Log ข้อความจริง
+
     if (messageText.toLowerCase().startsWith(WEBEX_BOT_NAME)) {
       messageText = messageText.substring(WEBEX_BOT_NAME.length).trim();
     }
@@ -119,7 +122,7 @@ app.post('/webex', async (req, res) => {
       const keyword = args.join(' ').trim();
       const sheetNameFromArgs = keyword;
 
-      // ✅ แบบ: ค้นหา <ชื่อชีต> (ส่งเป็น .txt)
+      // ✅ ค้นหาจากชื่อชีต แล้วส่ง .txt
       if (allSheetNames.includes(sheetNameFromArgs)) {
         const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetNameFromArgs);
         if (data.length === 0) {
@@ -144,7 +147,7 @@ app.post('/webex', async (req, res) => {
           fs.unlinkSync(tempFilePath);
         }
       }
-      // ✅ แบบ: ค้นหา <คำ>
+      // ✅ ค้นหาทั่วไปทุกชีต
       else {
         let results = [];
         for (const sheetName of allSheetNames) {
@@ -185,7 +188,7 @@ app.post('/webex', async (req, res) => {
           if (columnIndex === -1) {
             responseText = `❌ ไม่พบคอลัมน์ "${columnName}" ในชีต "${sheetName}"`;
           } else {
-            const columnLetter = String.fromCharCode(65 + columnIndex); // A-Z
+            const columnLetter = String.fromCharCode(65 + columnIndex);
             const targetCell = `${columnLetter}${rowNumber}`;
             await sheets.spreadsheets.values.update({
               spreadsheetId: GOOGLE_SHEET_FILE_ID,
