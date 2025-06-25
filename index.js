@@ -74,20 +74,11 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
 
 async function sendMessageInChunks(roomId, message) {
   const CHUNK_LIMIT = 6000;
-  const paragraphs = message.split('\n\n');
-  let currentChunk = '';
-
-  for (const para of paragraphs) {
-    if ((currentChunk + '\n\n' + para).length > CHUNK_LIMIT) {
-      await sendChunk(roomId, currentChunk);
-      currentChunk = para;
-    } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + para;
-    }
-  }
-
-  if (currentChunk) {
-    await sendChunk(roomId, currentChunk);
+  let i = 0;
+  while (i < message.length) {
+    const chunk = message.substring(i, i + CHUNK_LIMIT);
+    await sendChunk(roomId, chunk);
+    i += CHUNK_LIMIT;
   }
 }
 
