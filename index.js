@@ -74,18 +74,33 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
 
 async function sendMessageInChunks(roomId, message) {
   const CHUNK_LIMIT = 6000;
-  for (let i = 0; i < message.length; i += CHUNK_LIMIT) {
-    const chunk = message.substring(i, i + CHUNK_LIMIT);
-    try {
-      await axios.post('https://webexapis.com/v1/messages', {
-        roomId,
-        markdown: chunk
-      }, {
-        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-      });
-    } catch (err) {
-      console.error('❌ Webex error:', err.response?.data || err.message);
+  const paragraphs = message.split('\n\n');
+  let currentChunk = '';
+
+  for (const para of paragraphs) {
+    if ((currentChunk + '\n\n' + para).length > CHUNK_LIMIT) {
+      await sendChunk(roomId, currentChunk);
+      currentChunk = para;
+    } else {
+      currentChunk += (currentChunk ? '\n\n' : '') + para;
     }
+  }
+
+  if (currentChunk) {
+    await sendChunk(roomId, currentChunk);
+  }
+}
+
+async function sendChunk(roomId, chunk) {
+  try {
+    await axios.post('https://webexapis.com/v1/messages', {
+      roomId,
+      markdown: chunk
+    }, {
+      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+    });
+  } catch (err) {
+    console.error('❌ Webex error:', err.response?.data || err.message);
   }
 }
 
@@ -104,7 +119,6 @@ async function sendFileAttachment(roomId, filename, content) {
         ...form.getHeaders()
       }
     });
-    console.log('📎 ส่งไฟล์แนบเรียบร้อย');
   } catch (err) {
     console.error('❌ ส่งไฟล์แนบล้มเหลว:', err.response?.data || err.message);
   } finally {
@@ -116,12 +130,10 @@ app.post('/webex', async (req, res) => {
   try {
     const data = req.body.data;
     const personId = (data.personId || '').trim();
-
     if (personId === BOT_ID) return res.status(200).send('Ignore self-message');
 
     const messageId = data.id;
     const roomId = data.roomId;
-
     const messageRes = await axios.get(`https://webexapis.com/v1/messages/${messageId}`, {
       headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
     });
