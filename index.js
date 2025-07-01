@@ -44,9 +44,9 @@ function getCellByHeader2(rowArray, headerRow2, keyword) {
   return idx !== -1 ? flattenText(rowArray[idx]) : '-';
 }
 
-function formatRow(rowObj, headerRow2, index) {
+function formatRow(rowObj, headerRow2, index, sheetName) {
   const rowArray = Object.values(rowObj);
-  return `📄 พบข้อมูลในแถว ${index + 3}\n` +
+  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
     `📝 ชื่องาน: ${flattenText(rowObj['ชื่องาน'])} | 🧾 WBS: ${flattenText(rowObj['WBS'])}\n` +
     `💰 ชำระเงิน/ลว.: ${flattenText(rowObj['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(rowObj['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(rowObj['รับแฟ้ม'])}\n` +
     `🔌 หม้อแปลง: ${flattenText(rowObj['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${getCellByHeader2(rowArray, headerRow2, 'HT')} | ⚡ ระยะทาง LT: ${getCellByHeader2(rowArray, headerRow2, 'LT')}\n` +
@@ -156,7 +156,7 @@ app.post('/webex', async (req, res) => {
     } else if (command === 'ค้นหา') {
       if (allSheetNames.includes(keyword)) {
         const { data, rawHeaders2 } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, keyword);
-        const resultText = data.map((row, idx) => formatRow(row, rawHeaders2, idx)).join('\n\n');
+        const resultText = data.map((row, idx) => formatRow(row, rawHeaders2, idx, keyword)).join('\n\n');
         if (resultText.length > 7000) {
           await axios.post('https://webexapis.com/v1/messages', {
             roomId,
@@ -175,7 +175,7 @@ app.post('/webex', async (req, res) => {
           const { data, rawHeaders2 } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
           data.forEach((row, idx) => {
             const match = Object.values(row).some(v => flattenText(v).includes(keyword));
-            if (match) results.push(formatRow(row, rawHeaders2, idx));
+            if (match) results.push(formatRow(row, rawHeaders2, idx, sheetName));
           });
         }
         responseText = results.length ? results.join('\n\n') : '❌ ไม่พบข้อมูลที่ต้องการ';
