@@ -184,14 +184,28 @@ app.post('/webex', async (req, res) => {
       if (args.length < 4) {
         responseText = '❗ รูปแบบคำสั่งไม่ถูกต้อง: แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>';
       } else {
-        const sheetName = args[0];
-        const columnName = args[1];
-        const rowIndex = parseInt(args[2]);
-        const newValue = args.slice(3).join(' ');
+        // รองรับชื่อชีต 2 คำ หรือ 1 คำ
+        let sheetName = '';
+        let columnName = '';
+        let rowIndex = 0;
+        let newValue = '';
 
-        if (!allSheetNames.includes(sheetName)) {
-          responseText = `❌ ไม่พบชีตชื่อ "${sheetName}"`;
+        let trySheetName = args[0] + ' ' + args[1];
+        if (allSheetNames.includes(trySheetName)) {
+          sheetName = trySheetName;
+          columnName = args[2];
+          rowIndex = parseInt(args[3]);
+          newValue = args.slice(4).join(' ');
+        } else if (allSheetNames.includes(args[0])) {
+          sheetName = args[0];
+          columnName = args[1];
+          rowIndex = parseInt(args[2]);
+          newValue = args.slice(3).join(' ');
         } else {
+          responseText = `❌ ไม่พบชีตชื่อ "${args[0]}" หรือ "${trySheetName}"`;
+        }
+
+        if (sheetName) {
           const res = await sheets.spreadsheets.values.get({
             spreadsheetId: GOOGLE_SHEET_FILE_ID,
             range: `${sheetName}!A1:Z2`
