@@ -96,47 +96,31 @@ async function sendMessageInChunks(roomId, message) {
   const CHUNK_LIMIT = 7000;
   for (let i = 0; i < message.length; i += CHUNK_LIMIT) {
     const chunk = message.substring(i, i + CHUNK_LIMIT);
-    if (!chunk.trim()) continue; // ข้ามข้อความว่าง
-
-    try {
-      console.log("📤 ส่ง chunk:", chunk.slice(0, 80), '...');
-
-      await axios.post('https://webexapis.com/v1/messages', {
-        roomId,
-        text: chunk
-      }, {
-        headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
-      });
-
-    } catch (err) {
-      console.error('❌ Error sending message chunk:', err.response?.data || err.message);
-    }
+    await axios.post('https://webexapis.com/v1/messages', {
+      roomId,
+      text: chunk
+    }, {
+      headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+    });
   }
 }
 
 async function sendFileAttachment(roomId, filename, content) {
   const filePath = `/tmp/${filename}`;
-  try {
-    fs.writeFileSync(filePath, content, 'utf8');
+  fs.writeFileSync(filePath, content, 'utf8');
 
-    const form = new FormData();
-    form.append('roomId', roomId);
-    form.append('files', fs.createReadStream(filePath));
+  const form = new FormData();
+  form.append('roomId', roomId);
+  form.append('files', fs.createReadStream(filePath));
 
-    console.log("📎 แนบไฟล์:", filePath);
+  await axios.post('https://webexapis.com/v1/messages', form, {
+    headers: {
+      Authorization: `Bearer ${WEBEX_BOT_TOKEN}`,
+      ...form.getHeaders()
+    }
+  });
 
-    await axios.post('https://webexapis.com/v1/messages', form, {
-      headers: {
-        Authorization: `Bearer ${WEBEX_BOT_TOKEN}`,
-        ...form.getHeaders()
-      }
-    });
-
-  } catch (err) {
-    console.error('❌ Error sending file attachment:', err.response?.data || err.message);
-  } finally {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  }
+  fs.unlinkSync(filePath);
 }
 
 // === Route หลักของ Webex Webhook ===
@@ -174,7 +158,12 @@ app.post('/webex', async (req, res) => {
         const { data, rawHeaders2 } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, keyword);
         const resultText = data.map((row, idx) => formatRow(row, rawHeaders2, idx, keyword)).join('\n\n');
         if (resultText.length > 7000) {
-          await sendMessageInChunks(roomId, '📎 ข้อมูลยาวเกิน แนบเป็นไฟล์แทน');
+          await axios.post('https://webexapis.com/v1/messages', {
+            roomId,
+            markdown: '📎 ข้อมูลยาวเกิน แนบเป็นไฟล์แทน'
+          }, {
+            headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` }
+          });
           await sendFileAttachment(roomId, 'ข้อมูล.txt', resultText);
           return res.status(200).send('sent file');
         } else {
@@ -195,6 +184,7 @@ app.post('/webex', async (req, res) => {
       if (args.length < 4) {
         responseText = '❗ รูปแบบคำสั่งไม่ถูกต้อง: แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>';
       } else {
+        // รองรับชื่อชีต 2 คำ หรือ 1 คำ
         let sheetName = '';
         let columnName = '';
         let rowIndex = 0;
@@ -247,9 +237,6 @@ app.post('/webex', async (req, res) => {
     res.status(200).send('OK');
   } catch (err) {
     console.error('❌ ERROR:', err.stack || err.message);
-    if (err.response) {
-      console.error('📥 Response Data:', err.response.data);
-    }
     res.status(500).send('Error');
   }
 });
