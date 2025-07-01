@@ -37,26 +37,23 @@ function flattenText(text) {
   return (text || '').toString().replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function getCell(row, keyword) {
-  const normalized = (text) => text.replace(/\s+/g, '').toLowerCase();
-  const match = Object.keys(row).find(k => {
-    const key = normalized(k);
-    const numKeyword = keyword.replace(/\D/g, '');
-    const numKey = key.replace(/\D/g, '');
-    return numKey === numKeyword;
-  });
-  return flattenText(row[match]) || '-';
+function getCellByHeader2(rowArray, headerRow2, keyword) {
+  const idx = headerRow2.findIndex(h =>
+    h.trim().toLowerCase().includes(keyword.toLowerCase())
+  );
+  return idx !== -1 ? flattenText(rowArray[idx]) : '-';
 }
 
-function formatRow(row, sheetName, index) {
-  return `📄 พบข้อมูลในชีต: ${sheetName} (แถว ${index + 3})\n` +
-    `📝 ชื่องาน: ${flattenText(row['ชื่องาน'])} | 🧾 WBS: ${flattenText(row['WBS'])}\n` +
-    `💰 ชำระเงิน/ลว.: ${flattenText(row['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(row['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(row['รับแฟ้ม'])}\n` +
-    `🔌 หม้อแปลง: ${flattenText(row['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${getCell(row, 'HT')} | ⚡ ระยะทาง LT: ${getCell(row, 'LT')}\n` +
-    `🪵 เสา 8 : ${getCell(row, '8')} | 🪵 เสา 9 : ${getCell(row, '9')} | 🪵 เสา 12 : ${getCell(row, '12')} | 🪵 เสา 12.20 : ${getCell(row, '12.20')}\n` +
-    `👷‍♂️ พชง.ควบคุม: ${flattenText(row['พชง.ควบคุม'])}\n` +
-    `📌 สถานะงาน: ${flattenText(row['สถานะงาน'])} | 📊 เปอร์เซ็นงาน: ${flattenText(row['เปอร์เซ็นงาน'])}\n` +
-    `🗒️ หมายเหตุ: ${flattenText(row['หมายเหตุ'])}`;
+function formatRow(rowObj, headerRow2, index) {
+  const rowArray = Object.values(rowObj);
+  return `📄 พบข้อมูลในแถว ${index + 3}\n` +
+    `📝 ชื่องาน: ${flattenText(rowObj['ชื่องาน'])} | 🧾 WBS: ${flattenText(rowObj['WBS'])}\n` +
+    `💰 ชำระเงิน/ลว.: ${flattenText(rowObj['ชำระเงิน/ลว.'])} | ✅ อนุมัติ/ลว.: ${flattenText(rowObj['อนุมัติ/ลว.'])} | 📂 รับแฟ้ม: ${flattenText(rowObj['รับแฟ้ม'])}\n` +
+    `🔌 หม้อแปลง: ${flattenText(rowObj['หม้อแปลง'])} | ⚡ ระยะทาง HT: ${getCellByHeader2(rowArray, headerRow2, 'HT')} | ⚡ ระยะทาง LT: ${getCellByHeader2(rowArray, headerRow2, 'LT')}\n` +
+    `🪵 เสา 8 : ${getCellByHeader2(rowArray, headerRow2, '8')} | 🪵 เสา 9 : ${getCellByHeader2(rowArray, headerRow2, '9')} | 🪵 เสา 12 : ${getCellByHeader2(rowArray, headerRow2, '12')} | 🪵 เสา 12.20 : ${getCellByHeader2(rowArray, headerRow2, '12.20')}\n` +
+    `👷‍♂️ พชง.ควบคุม: ${flattenText(rowObj['พชง.ควบคุม'])}\n` +
+    `📌 สถานะงาน: ${flattenText(rowObj['สถานะงาน'])} | 📊 เปอร์เซ็นงาน: ${flattenText(rowObj['เปอร์เซ็นงาน'])}\n` +
+    `🗒️ หมายเหตุ: ${flattenText(rowObj['หมายเหตุ'])}`;
 }
 
 async function getAllSheetNames(spreadsheetId) {
@@ -71,7 +68,7 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
   });
 
   const rows = res.data.values;
-  if (!rows || rows.length < 3) return [];
+  if (!rows || rows.length < 3) return { data: [], rawHeaders2: [] };
 
   const headerRow1 = rows[0];
   const headerRow2 = rows[1];
@@ -83,13 +80,16 @@ async function getSheetWithHeaders(sheets, spreadsheetId, sheetName) {
 
   const dataRows = rows.slice(2);
 
-  return dataRows.map(row => {
-    const rowData = {};
-    headers.forEach((header, i) => {
-      rowData[header] = row[i] || '';
-    });
-    return rowData;
-  });
+  return {
+    data: dataRows.map(row => {
+      const rowData = {};
+      headers.forEach((header, i) => {
+        rowData[header] = row[i] || '';
+      });
+      return rowData;
+    }),
+    rawHeaders2: headerRow2
+  };
 }
 
 async function sendMessageInChunks(roomId, message) {
@@ -155,8 +155,8 @@ app.post('/webex', async (req, res) => {
         `4. @bot_small help → แสดงวิธีใช้ทั้งหมด`;
     } else if (command === 'ค้นหา') {
       if (allSheetNames.includes(keyword)) {
-        const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, keyword);
-        const resultText = data.map((row, idx) => formatRow(row, keyword, idx)).join('\n\n');
+        const { data, rawHeaders2 } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, keyword);
+        const resultText = data.map((row, idx) => formatRow(row, rawHeaders2, idx)).join('\n\n');
         if (resultText.length > 7000) {
           await axios.post('https://webexapis.com/v1/messages', {
             roomId,
@@ -172,10 +172,10 @@ app.post('/webex', async (req, res) => {
       } else {
         let results = [];
         for (const sheetName of allSheetNames) {
-          const data = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
+          const { data, rawHeaders2 } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
           data.forEach((row, idx) => {
             const match = Object.values(row).some(v => flattenText(v).includes(keyword));
-            if (match) results.push(formatRow(row, sheetName, idx));
+            if (match) results.push(formatRow(row, rawHeaders2, idx));
           });
         }
         responseText = results.length ? results.join('\n\n') : '❌ ไม่พบข้อมูลที่ต้องการ';
