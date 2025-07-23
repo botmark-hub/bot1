@@ -21,7 +21,7 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN;
 const GOOGLE_SHEET_FILE_ID = process.env.GOOGLE_SHEET_FILE_ID;
-const WEBEX_BOT_NAME = 'BOT';
+const WEBEX_BOT_NAME = 'bot_small';
 const BOT_ID = (process.env.BOT_ID || '').trim();
 
 // Set up Google API connection with Service Account
