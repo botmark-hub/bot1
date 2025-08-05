@@ -248,7 +248,7 @@ app.post('/webex', async (req, res) => {
 
         // Define EXCEL_THRESHOLD for general search. Use a conservative value.
         // กำหนดค่า EXCEL_THRESHOLD สำหรับการค้นหาทั่วไป (ถ้าข้อความผลลัพธ์ยาวเกินกว่านี้จะส่งเป็น Excel แทน)
-        const EXCEL_THRESHOLD_GENERAL_SEARCH = 800;
+        const EXCEL_THRESHOLD_GENERAL_SEARCH = 500;
 
         if (command === 'help') { // ถ้าคำสั่งคือ "help"
             responseText = `📌 คำสั่งที่ใช้ได้:\n` + // สร้างข้อความแสดงรายการคำสั่ง
@@ -263,7 +263,7 @@ app.post('/webex', async (req, res) => {
 
                 // --- DEBUGGING START (specific sheet) ---
                 console.log(`DEBUG: resultText length (specific sheet) = ${resultText.length}`); // แสดงความยาวของข้อความผลลัพธ์
-                const EXCEL_THRESHOLD_SPECIFIC_SHEET = 800; // กำหนด threshold สำหรับชีตเฉพาะ
+                const EXCEL_THRESHOLD_SPECIFIC_SHEET = 500; // กำหนด threshold สำหรับชีตเฉพาะ
                 console.log(`DEBUG: EXCEL_THRESHOLD_SPECIFIC_SHEET = ${EXCEL_THRESHOLD_SPECIFIC_SHEET}`);
                 console.log(`DEBUG: Is resultText.length > EXCEL_THRESHOLD_SPECIFIC_SHEET? ${resultText.length > EXCEL_THRESHOLD_SPECIFIC_SHEET}`);
                 // --- DEBUGGING END ---
