@@ -6,6 +6,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "form-data": "^4.0.4",
-    "googleapis": "^153.0.0"
+    "googleapis": "^153.0.0",
+    "ngrok": "^5.0.0-beta.2"
   }
 }
