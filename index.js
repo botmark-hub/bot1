@@ -345,58 +345,49 @@ app.post('/webex', async (req, res) => {
                 // to the final sendMessageInChunks below.
                 // ถ้าข้อความไม่ยาวเกิน ก็จะถูกส่งเป็นข้อความปกติใน sendMessageInChunks ด้านล่าง
             }
-        } else if (command === 'แก้ไข') {
-    // รวมข้อความกลับมา
-    const fullText = args.join(" ").trim();
+        } else if (command === 'แก้ไข') { // ถ้าคำสั่งคือ "แก้ไข"
+            if (args.length < 3) { // ตรวจสอบว่ามี argument เพียงพอหรือไม่
+                responseText = '❗ รูปแบบคำสั่งไม่ถูกต้อง: แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความ>';
+            } else {
+                let sheetName = args[0]; // ชื่อชีต
+                let columnName = args[1]; // ชื่อคอลัมน์
+                let rowIndex = parseInt(args[2]); // เลขแถว (แปลงเป็นตัวเลข)
+                let newValue = args.slice(3).join(' '); // ค่าใหม่ที่จะใส่
 
-    // โครงสร้าง: แก้ไข <ชื่อชีต> <ชื่อคอลัมน์> <แถวที่> <ข้อความใหม่>
-    // ใช้ regex แยก โดยดึง "ชื่อชีต" ที่อาจมีเว้นวรรค
-    const match = fullText.match(/^(.+?)\s+(\S+)\s+(\d+)\s+(.+)$/);
+                if (allSheetNames.includes(sheetName)) { // ตรวจสอบว่าชื่อชีตมีอยู่จริง
+                    const res = await sheets.spreadsheets.values.get({ // ดึงข้อมูลชีตทั้งหมด (เพื่อหาตำแหน่งคอลัมน์)
+                        spreadsheetId: GOOGLE_SHEET_FILE_ID,
+                        range: `${sheetName}!A1:Z`
+                    });
 
-    if (!match) {
-        await sendMessageToWebex(roomId, `❌ รูปแบบไม่ถูกต้อง\n\nตัวอย่าง: \n@bot_small แก้ไข ชื่อชีต คอลัมน์ แถว ข้อความใหม่`);
-        return res.sendStatus(200);
-    }
+                    const rows = res.data.values || []; // ดึงข้อมูลแถวทั้งหมด (ถ้าไม่มีให้เป็น array ว่าง)
+                    // rowIndex + 2 เพราะว่าใน Google Sheet index เริ่มจาก 1 และมี 2 header row
+                    if (rowIndex >= 1 && (rowIndex + 1) < rows.length) { // ตรวจสอบว่า rowIndex ถูกต้องและไม่เกินขอบเขตข้อมูล
+                        const header1 = rows[0]; // แถว header ที่ 1
+                        const header2 = rows[1]; // แถว header ที่ 2
+                        const headers = header1.map((h1, i) => `${h1} ${header2[i] || ''}`.trim()); // สร้าง header รวม
+                        const colIndex = headers.findIndex(h => h.includes(columnName)); // หา index ของคอลัมน์ที่ต้องการแก้ไข
 
-    const sheetName = match[1].trim();
-    const columnName = match[2].trim();
-    const rowNumber = parseInt(match[3].trim(), 10);
-    const newValue = match[4].trim();
-
-    try {
-        const sheets = await getSheetsData();
-        const sheet = sheets.find(s => s.title === sheetName);
-
-        if (!sheet) {
-            await sendMessageToWebex(roomId, `❌ ไม่พบชีตชื่อ "${sheetName}"`);
-            return res.sendStatus(200);
-        }
-
-        const headers = sheet.values[0]; // สมมติ header อยู่แถวแรก
-        const colIndex = headers.indexOf(columnName);
-        if (colIndex === -1) {
-            await sendMessageToWebex(roomId, `❌ ไม่พบคอลัมน์ "${columnName}" ในชีต "${sheetName}"`);
-            return res.sendStatus(200);
-        }
-
-        // แก้ไขค่าที่ Google Sheet
-        const targetRange = `${sheetName}!${String.fromCharCode(65 + colIndex)}${rowNumber + 1}`; 
-        // บวก 1 เพราะ Google Sheet index เริ่มที่ 1 และอีกบวก header แถวแรก
-        await sheetsApi.spreadsheets.values.update({
-            spreadsheetId: process.env.GOOGLE_SHEET_FILE_ID,
-            range: targetRange,
-            valueInputOption: 'USER_ENTERED',
-            resource: { values: [[newValue]] },
-        });
-
-        await sendMessageToWebex(roomId, `✅ อัปเดตสำเร็จ:\nชีต: ${sheetName}\nคอลัมน์: ${columnName}\nแถว: ${rowNumber}\nค่าใหม่: ${newValue}`);
-    } catch (error) {
-        console.error(error);
-        await sendMessageToWebex(roomId, `❌ เกิดข้อผิดพลาด: ${error.message}`);
-    }
-
-    return res.sendStatus(200);
-    
+                        if (colIndex === -1) { // ถ้าไม่พบคอลัมน์
+                            responseText = `❌ ไม่พบคอลัมน์ "${columnName}"`;
+                        } else {
+                            const colLetter = String.fromCharCode(65 + colIndex); // แปลง index คอลัมน์เป็นตัวอักษร (A, B, C...)
+                            const range = `${sheetName}!${colLetter}${rowIndex + 2}`; // สร้าง range สำหรับการอัปเดต (บวก 2 เพราะแถวข้อมูลจริงเริ่มที่ 3)
+                            await sheets.spreadsheets.values.update({ // อัปเดตค่าใน Google Sheet
+                                spreadsheetId: GOOGLE_SHEET_FILE_ID,
+                                range, // range ที่ต้องการอัปเดต
+                                valueInputOption: 'USER_ENTERED', // ตัวเลือกการป้อนค่า (เหมือนพิมพ์ด้วยมือ)
+                                requestBody: { values: [[newValue]] } // ค่าใหม่ที่จะใส่
+                            });
+                            responseText = `✅ แก้ไขแล้ว: ${range} → ${newValue}`; // แจ้งผู้ใช้ว่าแก้ไขสำเร็จ
+                        }
+                    } else {
+                        responseText = `❌ ไม่พบแถวที่ ${rowIndex} หรือแถวไม่ถูกต้อง (ควรเป็นแถวข้อมูล เช่น 1, 2, ...)`; // แจ้งว่าแถวไม่ถูกต้อง
+                    }
+                } else {
+                    responseText = `❌ ไม่พบชีตชื่อ "${sheetName}"`; // แจ้งว่าไม่พบชื่อชีต
+                }
+            }
         } else { // ถ้าเป็นคำสั่งที่ไม่รู้จัก
             responseText = `❓ ไม่เข้าใจคำสั่ง ลองพิมพ์ "@${WEBEX_BOT_NAME} help"`; // แจ้งให้ลองพิมพ์ "help"
         }
