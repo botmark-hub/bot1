@@ -286,30 +286,32 @@ app.post('/webex', async (req, res) => {
             }
 
             // หา column index
-            const headers = rows[1]; // แถวที่ 2 เป็น header จริง
-            const colIndex = headers.findIndex(h => h.trim() === columnName);
-            if (colIndex === -1) {
-                await sendMessageInChunks(roomId, '❌ ไม่พบคอลัมน์: ' + columnName);
-                return res.status(200).send('ok');
-            }
+            // หา column index จาก header จริง (แถว 1)
+const headers = rows[0]; // แถวที่ 1 เป็น header จริง
+const colIndex = headers.findIndex(h => h.trim() === columnName);
+if (colIndex === -1) {
+    await sendMessageInChunks(roomId, '❌ ไม่พบคอลัมน์: ' + columnName);
+    return res.status(200).send('ok');
+}
 
-            // ตรวจสอบแถว
-            if (rowIndex < 1 || rowIndex > rows.length - 2) {
-                await sendMessageInChunks(roomId, '❌ แถวที่ระบุไม่ถูกต้อง');
-                return res.status(200).send('ok');
-            }
+// ตรวจสอบแถว
+if (rowIndex < 1 || rowIndex > rows.length - 1) { // rows.length -1 เพราะ header แถว 1
+    await sendMessageInChunks(roomId, '❌ แถวที่ระบุไม่ถูกต้อง');
+    return res.status(200).send('ok');
+}
 
-            // แก้ไขค่า
-            const targetRow = rowIndex + 1; // +1 เพราะ rows index เริ่มจาก 0 และ header 2 แถว
-            const updateRange = `${sheetName}!${String.fromCharCode(65 + colIndex)}${targetRow + 1}`;
-            await sheets.spreadsheets.values.update({
-                spreadsheetId: GOOGLE_SHEET_FILE_ID,
-                range: updateRange,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: {
-                    values: [[newValue]]
-                }
-            });
+// แก้ไขค่า
+const targetRow = rowIndex + 1; // +1 เพราะ Google Sheet index เริ่มที่ 1 และ header อยู่แถวแรก
+const updateRange = `${sheetName}!${String.fromCharCode(65 + colIndex)}${targetRow + 1}`;
+await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_FILE_ID,
+    range: updateRange,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: {
+        values: [[newValue]]
+    }
+});
+
 
             await sendMessageInChunks(roomId, `✅ แก้ไขสำเร็จ: ${sheetName} [${columnName} แถว ${rowIndex}] → ${newValue}`);
         }
