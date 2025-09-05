@@ -267,7 +267,7 @@ app.post('/webex', async (req, res) => {
                     break;
                 }
             }
-            else if (command === 'ค้นหา') {
+        }else if (command === 'ค้นหา') {
     if (!keyword) {
         await sendMessageInChunks(roomId, '❌ โปรดระบุคำค้นหา เช่น: ค้นหา เดือน ธันวาคม');
         return res.status(200).send('ok');
