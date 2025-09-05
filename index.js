@@ -66,6 +66,11 @@ function formatRow(rowObj, headerRow2, index, sheetName) {
         `🗒️ หมายเหตุ: ${flattenText(rowObj['หมายเหตุ'])}`;
 }
 
+// Function to check if message is too long
+function isMessageTooLong(message, limit = 1500) {
+    return message.length > limit;
+}
+
 // Function to get all sheet names from a Google Spreadsheet
 async function getAllSheetNames(spreadsheetId) {
     const res = await sheets.spreadsheets.get({ spreadsheetId });
@@ -304,15 +309,17 @@ app.post('/webex', async (req, res) => {
                 const { data } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, keyword);
                 if (!data.length) {
                     await sendMessageInChunks(roomId, `❌ ไม่พบข้อมูลในชีต ${keyword}`);
-                } else if (data.length > 100) {
-                    // ถ้าเกิน 100 แถว → ส่งเป็นไฟล์
-                    await sendFileAttachment(roomId, `${keyword}.xlsx`, data);
                 } else {
                     let msg = `📑 ข้อมูลทั้งหมดในชีต: ${keyword}\n\n`;
                     data.forEach((row, idx) => {
                         msg += formatRow(row, Object.keys(row), idx, keyword) + '\n\n';
                     });
-                    await sendMessageInChunks(roomId, msg);
+
+                    if (isMessageTooLong(msg)) {
+                        await sendFileAttachment(roomId, `${keyword}.xlsx`, data);
+                    } else {
+                        await sendMessageInChunks(roomId, msg);
+                    }
                 }
                 return res.status(200).send('ok');
             }
@@ -333,7 +340,16 @@ app.post('/webex', async (req, res) => {
                             data.forEach((row, idx) => {
                                 msg += `แถว ${idx + 3}: ${flattenText(row[colExists])}\n`;
                             });
-                            await sendMessageInChunks(roomId, msg);
+
+                            if (isMessageTooLong(msg)) {
+                                const results = data.map((row, idx) => ({
+                                    'แถว': idx + 3,
+                                    'ค่า': flattenText(row[colExists])
+                                }));
+                                await sendFileAttachment(roomId, `คอลัมน์_${colName}_${sheetName}.xlsx`, results);
+                            } else {
+                                await sendMessageInChunks(roomId, msg);
+                            }
                         }
                     }
                     return res.status(200).send('ok');
@@ -354,10 +370,13 @@ app.post('/webex', async (req, res) => {
 
             if (!results.length) {
                 await sendMessageInChunks(roomId, `❌ ไม่พบ "${keyword}" ในทุกชีต`);
-            } else if (results.length > EXCEL_THRESHOLD_GENERAL_SEARCH) {
-                await sendFileAttachment(roomId, `ผลการค้นหา_${keyword}.xlsx`, results);
             } else {
-                await sendMessageInChunks(roomId, results.join('\n\n'));
+                const resultsMessage = results.join('\n\n');
+                if (isMessageTooLong(resultsMessage)) {
+                    await sendFileAttachment(roomId, `ผลการค้นหา_${keyword}.xlsx`, results);
+                } else {
+                    await sendMessageInChunks(roomId, resultsMessage);
+                }
             }
             return res.status(200).send('ok');
         }
