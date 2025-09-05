@@ -267,6 +267,76 @@ app.post('/webex', async (req, res) => {
                     break;
                 }
             }
+            else if (command === 'ค้นหา') {
+    if (!keyword) {
+        await sendMessageInChunks(roomId, '❌ โปรดระบุคำค้นหา เช่น: ค้นหา เดือน ธันวาคม');
+        return res.status(200).send('ok');
+    }
+
+    // 1) ถ้า keyword ตรงกับชื่อชีต → แสดงข้อมูลทั้งหมด
+    if (allSheetNames.includes(keyword)) {
+        const { data } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, keyword);
+        if (!data.length) {
+            await sendMessageInChunks(roomId, `❌ ไม่พบข้อมูลในชีต ${keyword}`);
+        } else if (data.length > 100) {
+            // ถ้าเกิน 100 แถว → ส่งเป็นไฟล์
+            await sendFileAttachment(roomId, `${keyword}.xlsx`, data);
+        } else {
+            let msg = `📑 ข้อมูลทั้งหมดในชีต: ${keyword}\n\n`;
+            data.forEach((row, idx) => {
+                msg += formatRow(row, Object.keys(row), idx, keyword) + '\n\n';
+            });
+            await sendMessageInChunks(roomId, msg);
+        }
+        return res.status(200).send('ok');
+    }
+
+    // 2) ถ้า keyword = "<ชื่อชีต> <ชื่อคอลัมน์>"
+    for (const sheetName of allSheetNames) {
+        if (keyword.startsWith(sheetName + ' ')) {
+            const colName = keyword.slice(sheetName.length).trim();
+            const { data } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
+            if (!data.length) {
+                await sendMessageInChunks(roomId, `❌ ไม่พบข้อมูลในชีต ${sheetName}`);
+            } else {
+                const colExists = Object.keys(data[0]).find(h => h.includes(colName));
+                if (!colExists) {
+                    await sendMessageInChunks(roomId, `❌ ไม่พบคอลัมน์ ${colName} ในชีต ${sheetName}`);
+                } else {
+                    let msg = `📑 คอลัมน์ ${colName} ในชีต ${sheetName}\n\n`;
+                    data.forEach((row, idx) => {
+                        msg += `แถว ${idx + 3}: ${flattenText(row[colExists])}\n`;
+                    });
+                    await sendMessageInChunks(roomId, msg);
+                }
+            }
+            return res.status(200).send('ok');
+        }
+    }
+
+    // 3) ค้นหาคำทั่วทุกชีต
+    let results = [];
+    for (const sheetName of allSheetNames) {
+        const { data, rawHeaders2 } = await getSheetWithHeaders(sheets, GOOGLE_SHEET_FILE_ID, sheetName);
+        data.forEach((row, idx) => {
+            const values = Object.values(row).join(' ');
+            if (values.includes(keyword)) {
+                results.push(formatRow(row, rawHeaders2, idx, sheetName));
+            }
+        });
+    }
+
+    if (!results.length) {
+        await sendMessageInChunks(roomId, `❌ ไม่พบ "${keyword}" ในทุกชีต`);
+    } else if (results.length > EXCEL_THRESHOLD_GENERAL_SEARCH) {
+        await sendFileAttachment(roomId, `ผลการค้นหา_${keyword}.xlsx`, results);
+    } else {
+        await sendMessageInChunks(roomId, results.join('\n\n'));
+    }
+
+    return res.status(200).send('ok');
+}
+
 
             if (!sheetName) {
                 await sendMessageInChunks(roomId, '❌ ไม่พบชื่อชีต: ' + args.join(' '));
